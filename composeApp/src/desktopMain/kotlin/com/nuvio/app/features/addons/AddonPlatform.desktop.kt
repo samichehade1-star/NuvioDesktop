@@ -41,6 +41,13 @@ internal actual object AddonStorage {
     actual fun saveAddonEnabledStates(profileId: Int, states: Map<String, Boolean>) {
         store.putString("addon_enabled_states_$profileId", json.encodeToString(states))
     }
+
+    actual fun hasSeededDefaultAddons(profileId: Int): Boolean =
+        store.getBoolean("default_addons_seeded_$profileId") ?: false
+
+    actual fun markDefaultAddonsSeeded(profileId: Int) {
+        store.putBoolean("default_addons_seeded_$profileId", true)
+    }
 }
 
 private val desktopHttpClient = OkHttpClient.Builder()

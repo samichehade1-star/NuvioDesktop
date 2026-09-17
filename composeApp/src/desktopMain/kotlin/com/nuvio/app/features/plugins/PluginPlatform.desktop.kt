@@ -34,6 +34,13 @@ internal object PluginStorage {
     fun loadScraperSettings(scraperId: String): String? =
         store.getString("settings_${scraperId}")
 
+    fun hasSeededDefaultRepositories(profileId: Int): Boolean =
+        store.getBoolean("default_repositories_seeded_$profileId") ?: false
+
+    fun markDefaultRepositoriesSeeded(profileId: Int) {
+        store.putBoolean("default_repositories_seeded_$profileId", true)
+    }
+
     fun saveScraperSettings(scraperId: String, payload: String) {
         store.putString("settings_${scraperId}", payload)
     }

@@ -12,4 +12,11 @@ internal actual object CollectionStorage {
     actual fun savePayload(payload: String) {
         store.putString(ProfileScopedKey.of("collections"), payload)
     }
+
+    actual fun hasSeededDefaultNetworks(): Boolean =
+        store.getBoolean(ProfileScopedKey.of("default_networks_seeded")) ?: false
+
+    actual fun markDefaultNetworksSeeded() {
+        store.putBoolean(ProfileScopedKey.of("default_networks_seeded"), true)
+    }
 }
