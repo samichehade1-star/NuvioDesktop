@@ -73,8 +73,8 @@ import com.nuvio.app.features.cloud.CloudLibraryItem
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.NetworksHubScreen
 import com.nuvio.app.features.library.LibraryItem
-import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
 import com.nuvio.app.features.player.PlayerBackReleaseGuard
@@ -265,16 +265,13 @@ internal fun AppTabHost(
             }
 
             AppScreenTab.Library -> {
-                LibraryScreen(
+                NetworksHubScreen(
                     modifier = Modifier.fillMaxSize(),
                     topChromePadding = state.topChromePadding,
                     scrollToTopRequests = requests.libraryScrollToTopRequests,
-                    onPosterClick = actions.onLibraryPosterClick,
-                    onPosterLongClick = actions.onLibraryPosterLongClick,
-                    onSectionViewAllClick = actions.onLibrarySectionViewAllClick,
-                    onCloudFilePlay = actions.onCloudFilePlay,
-                    onConnectCloudClick = actions.onConnectCloudClick,
-                    disintegrationRequest = state.libraryDisintegrationRequest,
+                    onCatalogClick = actions.onCatalogClick,
+                    onPosterClick = actions.onPosterClick,
+                    onPosterLongClick = actions.onPosterLongClick,
                 )
             }
 
@@ -1000,3 +997,4 @@ private fun DesktopSidebarItem(
         }
     }
 }
+

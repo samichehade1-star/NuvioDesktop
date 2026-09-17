@@ -51,6 +51,7 @@ import com.nuvio.app.core.ui.StreamResultsWideArtworkAspectRatio
 import com.nuvio.app.core.ui.expandingWideArtworkWidthDp
 import com.nuvio.app.core.ui.dominantBackdropBlendColor
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.nuvioDesktopWheelScroll
 import com.kmpalette.extensions.painter.rememberPainterDominantColorState
 import com.nuvio.app.core.ui.platformPhysicalTopInset
 import com.nuvio.app.isIos
@@ -622,7 +623,7 @@ private fun ActiveScrapersStatusBlock(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .nuvioDesktopDragScroll(scrollState)
+                .nuvioDesktopDragScroll(scrollState).nuvioDesktopWheelScroll(scrollState)
                 .horizontalScroll(scrollState),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {

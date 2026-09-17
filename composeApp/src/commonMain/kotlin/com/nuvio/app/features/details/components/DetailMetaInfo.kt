@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.nuvioDesktopWheelScroll
 import com.nuvio.app.core.ui.nuvioHorizontalScrollBleed
 import com.nuvio.app.isDesktop
 import com.nuvio.app.features.details.MetaDetails
@@ -193,7 +194,7 @@ internal fun DetailRatingsRow(
         modifier = modifier
             .nuvioHorizontalScrollBleed(horizontalScrollPadding)
             .fillMaxWidth()
-            .nuvioDesktopDragScroll(scrollState)
+            .nuvioDesktopDragScroll(scrollState).nuvioDesktopWheelScroll(scrollState)
             .horizontalScroll(scrollState)
             .padding(horizontal = horizontalScrollPadding),
         verticalAlignment = Alignment.CenterVertically,

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.SkeletonBlock
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.nuvioDesktopWheelScroll
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.nuvioHorizontalScrollBleed
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
@@ -85,7 +86,7 @@ fun DetailCommentsSection(
                     modifier = Modifier
                         .nuvioHorizontalScrollBleed(horizontalScrollPadding)
                         .fillMaxWidth()
-                        .nuvioDesktopDragScroll(loadingListState),
+                        .nuvioDesktopDragScroll(loadingListState).nuvioDesktopWheelScroll(loadingListState),
                     contentPadding = PaddingValues(horizontal = horizontalScrollPadding),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -128,7 +129,7 @@ fun DetailCommentsSection(
                     modifier = Modifier
                         .nuvioHorizontalScrollBleed(horizontalScrollPadding)
                         .fillMaxWidth()
-                        .nuvioDesktopDragScroll(listState),
+                        .nuvioDesktopDragScroll(listState).nuvioDesktopWheelScroll(listState),
                     contentPadding = PaddingValues(horizontal = horizontalScrollPadding),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {

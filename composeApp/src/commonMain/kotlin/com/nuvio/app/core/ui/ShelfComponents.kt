@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
@@ -117,7 +118,7 @@ fun <T> NuvioShelfSection(
         }
         LazyRow(
             state = state,
-            modifier = rowModifier.nuvioDesktopDragScroll(state),
+            modifier = rowModifier.nuvioDesktopDragScroll(state).nuvioDesktopWheelScroll(state),
             contentPadding = rowContentPadding,
             horizontalArrangement = Arrangement.spacedBy(itemSpacing),
         ) {
@@ -226,6 +227,52 @@ internal fun Modifier.nuvioDesktopDragScroll(
 
                 state.dispatchRawDelta(-delta.x)
                 change.consume()
+            }
+        }
+    }
+}
+
+private const val NuvioWheelScrollPixelsPerNotch = 120f
+
+internal fun Modifier.nuvioDesktopWheelScroll(
+    state: LazyListState,
+): Modifier {
+    if (!isDesktop) return this
+
+    return pointerInput(state) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                if (event.type != PointerEventType.Scroll) continue
+                val change = event.changes.firstOrNull() ?: continue
+                val scrollDelta = change.scrollDelta
+                val amount = if (scrollDelta.x != 0f) scrollDelta.x else scrollDelta.y
+                if (amount != 0f) {
+                    state.dispatchRawDelta(amount * NuvioWheelScrollPixelsPerNotch)
+                    change.consume()
+                }
+            }
+        }
+    }
+}
+
+internal fun Modifier.nuvioDesktopWheelScroll(
+    state: ScrollState,
+): Modifier {
+    if (!isDesktop) return this
+
+    return pointerInput(state) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                if (event.type != PointerEventType.Scroll) continue
+                val change = event.changes.firstOrNull() ?: continue
+                val scrollDelta = change.scrollDelta
+                val amount = if (scrollDelta.x != 0f) scrollDelta.x else scrollDelta.y
+                if (amount != 0f) {
+                    state.dispatchRawDelta(amount * NuvioWheelScrollPixelsPerNotch)
+                    change.consume()
+                }
             }
         }
     }
