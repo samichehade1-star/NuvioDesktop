@@ -33,6 +33,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.nuvioDesktopWheelScroll
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_action_off
 import nuvio.composeapp.generated.resources.compose_action_on
@@ -307,10 +309,13 @@ private fun SubtitleColorPicker(
     onColorSelected: (Color) -> Unit,
     enabled: Boolean = true,
 ) {
+    val colorScrollState = rememberScrollState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
+            .nuvioDesktopDragScroll(colorScrollState)
+            .nuvioDesktopWheelScroll(colorScrollState)
+            .horizontalScroll(colorScrollState)
             .alpha(if (enabled) 1f else 0.42f),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

@@ -48,6 +48,8 @@ import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.nuvioDesktopWheelScroll
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
@@ -224,7 +226,10 @@ private fun EpisodesListPanelContent(
         if (availableSeasons.isNotEmpty()) {
             LazyRow(
                 state = seasonListState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .nuvioDesktopDragScroll(seasonListState)
+                    .nuvioDesktopWheelScroll(seasonListState),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
             ) {
@@ -494,10 +499,13 @@ private fun EpisodeStreamsPanelContent(
         Spacer(Modifier.height(16.dp))
 
         if (streamsUiState.groups.isNotEmpty()) {
+            val filterScrollState = rememberScrollState()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
+                    .nuvioDesktopDragScroll(filterScrollState)
+                    .nuvioDesktopWheelScroll(filterScrollState)
+                    .horizontalScroll(filterScrollState)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {

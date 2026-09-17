@@ -27,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.nuvioDesktopDragScroll
+import com.nuvio.app.core.ui.nuvioDesktopWheelScroll
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamCard
@@ -118,10 +120,13 @@ fun PlayerSourcesPanel(
             Spacer(Modifier.height(16.dp))
 
             if (addonGroups.isNotEmpty()) {
+                val filterScrollState = rememberScrollState()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
+                        .nuvioDesktopDragScroll(filterScrollState)
+                        .nuvioDesktopWheelScroll(filterScrollState)
+                        .horizontalScroll(filterScrollState)
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
