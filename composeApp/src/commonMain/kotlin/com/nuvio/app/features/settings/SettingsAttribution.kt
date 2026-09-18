@@ -14,8 +14,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.build.AppVersionPolicy
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.compose_about_based_on_version_format
-import nuvio.composeapp.generated.resources.compose_about_made_with
 import nuvio.composeapp.generated.resources.compose_about_version_format
 import org.jetbrains.compose.resources.stringResource
 
@@ -38,13 +36,6 @@ internal fun SettingsAttribution(
         )
 
         Text(
-            text = stringResource(Res.string.compose_about_made_with),
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Text(
             text = stringResource(
                 Res.string.compose_about_version_format,
                 AppVersionPolicy.displayVersionName,
@@ -55,17 +46,5 @@ internal fun SettingsAttribution(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-        AppVersionPolicy.basedOnVersionName?.let { basedOnVersionName ->
-            Text(
-                text = stringResource(
-                    Res.string.compose_about_based_on_version_format,
-                    basedOnVersionName,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
     }
 }
