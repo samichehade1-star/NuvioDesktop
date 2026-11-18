@@ -80,7 +80,7 @@ internal fun MainTabsDestination(
     onProfileSelected: (NuvioProfile) -> Unit,
     onAddProfileRequested: () -> Unit,
 ) {
-    PlatformBackHandler(enabled = rootRouteActive, onBack = onBack)
+    PlatformBackHandler(enabled = rootRouteActive && !isDesktop, onBack = onBack)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val screenWidth = maxWidth
@@ -99,7 +99,11 @@ internal fun MainTabsDestination(
         val useFloatingTopBar = !isDesktop && isTabletLayout && !useNativeBottomTabs
         val topChromePadding = if (useFloatingTopBar || useDesktopTopBar) {
             val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            max(statusBarPadding + 24.dp, 48.dp) + 64.dp
+            if (useDesktopTopBar) {
+                statusBarPadding + 48.dp + 64.dp
+            } else {
+                max(statusBarPadding + 24.dp, 48.dp) + 64.dp
+            }
         } else {
             null
         }

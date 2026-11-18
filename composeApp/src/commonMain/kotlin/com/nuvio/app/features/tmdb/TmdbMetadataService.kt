@@ -13,6 +13,8 @@ import com.nuvio.app.features.details.MoreLikeThisSource
 import com.nuvio.app.features.details.PersonDetail
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -33,7 +35,16 @@ object TmdbMetadataService {
     private val log = Logger.withTag("TmdbMetadata")
     private val json = Json { ignoreUnknownKeys = true }
 
+    fun cachedOriginalTitle(tmdbId: String, type: String): String? {
+        val mediaType = TmdbService.normalizeMediaType(type)
+        val prefix = "$tmdbId:$mediaType:"
+        return synchronized(enrichmentCacheLock) {
+            enrichmentCache.entries.firstOrNull { it.key.startsWith(prefix) }?.value?.originalTitle
+        }
+    }
+
     private val enrichmentCache = mutableMapOf<String, TmdbEnrichment>()
+    private val enrichmentCacheLock = SynchronizedObject()
     private val episodeCache = mutableMapOf<String, Map<Pair<Int, Int>, TmdbEpisodeEnrichment>>()
     private val moreLikeThisCache = mutableMapOf<String, List<MetaPreview>>()
     private val collectionCache = mutableMapOf<String, Pair<String?, List<MetaPreview>>>()
@@ -693,7 +704,7 @@ object TmdbMetadataService {
             ?: return meta
 
         val needsEpisodes = (
-            settings.useEpisodes || settings.useReleaseDates || settings.useSeasonPosters
+            settings.useEpisodes || settings.useSeasonPosters
         ) && tmdbType == "tv"
         val (enrichment, episodeMap) = coroutineScope {
             val enrichmentDeferred = async {
@@ -827,13 +838,6 @@ object TmdbMetadataService {
             )
         }
 
-        if (enrichment != null && settings.useReleaseDates) {
-            updated = updated.copy(
-                releaseInfo = enrichment.releaseInfo ?: updated.releaseInfo,
-                lastAirDate = enrichment.lastAirDate ?: updated.lastAirDate,
-            )
-        }
-
         if (enrichment != null && settings.useCredits) {
             updated = updated.copy(
                 director = enrichment.director.ifEmpty { updated.director },
@@ -871,11 +875,7 @@ object TmdbMetadataService {
                             } else {
                                 video.overview
                             },
-                            released = if (settings.useReleaseDates) {
-                                enrichmentForEpisode.airDate ?: video.released
-                            } else {
-                                video.released
-                            },
+                            released = video.released,
                             thumbnail = if (settings.useEpisodes) {
                                 enrichmentForEpisode.thumbnail ?: video.thumbnail
                             } else {
@@ -898,10 +898,17 @@ object TmdbMetadataService {
         }
 
         if (enrichment != null && settings.useMoreLikeThis) {
-            updated = updated.copy(
-                moreLikeThis = enrichment.moreLikeThis,
-                moreLikeThisSource = MoreLikeThisSource.TMDB.takeIf { enrichment.moreLikeThis.isNotEmpty() },
-            )
+            val userMoreLikeThisSource = run {
+                com.nuvio.app.features.tracking.TrackingSettingsRepository.ensureLoaded()
+                com.nuvio.app.features.tracking.TrackingSettingsRepository.uiState.value.moreLikeThisSource
+            }
+            val tmdbIsPreferredSource = userMoreLikeThisSource == com.nuvio.app.features.trakt.MoreLikeThisSourcePreference.TMDB
+            if (tmdbIsPreferredSource || updated.moreLikeThis.isEmpty()) {
+                updated = updated.copy(
+                    moreLikeThis = enrichment.moreLikeThis,
+                    moreLikeThisSource = MoreLikeThisSource.TMDB.takeIf { enrichment.moreLikeThis.isNotEmpty() },
+                )
+            }
         }
 
         if (enrichment != null && settings.useCollections) {
@@ -926,7 +933,7 @@ object TmdbMetadataService {
     ): TmdbEnrichment? = withContext(Dispatchers.Default) {
         val normalizedLanguage = normalizeTmdbLanguage(language)
         val cacheKey = "$tmdbId:$mediaType:$normalizedLanguage"
-        enrichmentCache[cacheKey]?.let { return@withContext it }
+        synchronized(enrichmentCacheLock) { enrichmentCache[cacheKey] }?.let { return@withContext it }
 
         val numericId = tmdbId.toIntOrNull() ?: return@withContext null
         val includeImageLanguage = tmdbImageLanguages(normalizedLanguage)
@@ -1041,6 +1048,7 @@ object TmdbMetadataService {
             ?.takeIf { mediaType == "tv" }
         val enrichment = TmdbEnrichment(
             localizedTitle = localizedTitle,
+            originalTitle = details.originalTitle ?: details.originalName,
             description = description,
             genres = genres,
             backdrop = buildImageUrl(details.backdropPath, "w1280"),
@@ -1075,7 +1083,7 @@ object TmdbMetadataService {
         )
 
         if (!enrichment.hasContent()) return@withContext null
-        enrichmentCache[cacheKey] = enrichment
+        synchronized(enrichmentCacheLock) { enrichmentCache[cacheKey] = enrichment }
         enrichment
     }
 
@@ -1259,7 +1267,7 @@ object TmdbMetadataService {
         ) ?: return null to emptyList()
 
         val items = response.parts
-            .sortedBy { it.releaseDate ?: "9999" }
+            .sortedBy { it.releaseDate?.takeIf(String::isNotBlank) ?: "9999" }
             .mapNotNull { part ->
                 val title = part.title?.trim()?.takeIf(String::isNotBlank) ?: return@mapNotNull null
                 MetaPreview(
@@ -1407,6 +1415,7 @@ object TmdbMetadataService {
 }
 
 internal data class TmdbEnrichment(
+    val originalTitle: String? = null,
     val localizedTitle: String?,
     val description: String?,
     val genres: List<String>,
@@ -1783,7 +1792,7 @@ private fun Double.formatRating(): String =
 private fun Int.formatRuntime(): String = "${this}m"
 
 private fun List<TmdbMovieReleaseDateCountry>.selectMovieAgeRating(normalizedLanguage: String): String? {
-    val preferredRegions = preferredRegions(normalizedLanguage)
+    val preferredRegions = preferredAgeRatingRegions(normalizedLanguage)
     val byRegion = associateBy { it.iso31661?.uppercase() }
     preferredRegions.forEach { region ->
         val rating = byRegion[region]
@@ -1800,22 +1809,13 @@ private fun List<TmdbMovieReleaseDateCountry>.selectMovieAgeRating(normalizedLan
 }
 
 private fun List<TmdbTvContentRating>.selectTvAgeRating(normalizedLanguage: String): String? {
-    val preferredRegions = preferredRegions(normalizedLanguage)
+    val preferredRegions = preferredAgeRatingRegions(normalizedLanguage)
     val byRegion = associateBy { it.iso31661?.uppercase() }
     preferredRegions.forEach { region ->
         val rating = byRegion[region]?.rating?.trim()
         if (!rating.isNullOrBlank()) return rating
     }
     return mapNotNull { it.rating?.trim() }.firstOrNull(String::isNotBlank)
-}
-
-private fun preferredRegions(normalizedLanguage: String): List<String> {
-    val directRegion = normalizedLanguage.substringAfter("-", "").uppercase().takeIf { it.length == 2 }
-    return buildList {
-        if (!directRegion.isNullOrBlank()) add(directRegion)
-        add("US")
-        add("GB")
-    }.distinct()
 }
 
 private fun TmdbCompany.toMetaCompany(): MetaCompany? {
@@ -1836,6 +1836,8 @@ private data class Quadruple<A, B, C, D>(
 
 @Serializable
 private data class TmdbDetailsResponse(
+    @SerialName("original_title") val originalTitle: String? = null,
+    @SerialName("original_name") val originalName: String? = null,
     val title: String? = null,
     val name: String? = null,
     val overview: String? = null,

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.controller.RegisterControllerVerticalScroll
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioBackButton
@@ -66,6 +67,7 @@ import com.nuvio.app.features.tmdb.TmdbEntityKind
 import com.nuvio.app.features.tmdb.TmdbEntityMediaType
 import com.nuvio.app.features.tmdb.TmdbEntityRailType
 import com.nuvio.app.features.tmdb.TmdbMetadataService
+import com.nuvio.app.core.poster.withCustomPosterUrls
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.navigation.LocalUseNativeNavigation
 
@@ -107,7 +109,11 @@ fun TmdbEntityBrowseScreen(
             fallbackName = entityName,
         )
         uiState = if (data != null) {
-            EntityBrowseUiState.Success(data)
+            val pattern = com.nuvio.app.core.poster.CustomPosterUrlRepository.let { repo ->
+                repo.ensureLoaded()
+                repo.patternForScreen(com.nuvio.app.core.poster.CustomPosterScreen.DETAILS)
+            }
+            EntityBrowseUiState.Success(data.withCustomPosterUrls(pattern))
         } else {
             EntityBrowseUiState.Error(loadFailedMessage)
         }
@@ -140,6 +146,7 @@ fun TmdbEntityBrowseScreen(
                     NuvioBackButton(
                         onClick = onBack,
                         modifier = Modifier
+                            .windowInsetsPadding(WindowInsets.statusBars)
                             .padding(
                                 start = desktopPageHorizontalPaddingForWidth(maxWidth.value),
                                 top = 32.dp,
@@ -234,10 +241,12 @@ private fun EntityBrowseContent(
                 }
             } else {
                 val scrollState = rememberScrollState()
+                val scrollViewportModifier = RegisterControllerVerticalScroll(scrollState = scrollState)
                 Box(modifier = Modifier.fillMaxSize()) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
+                            .then(scrollViewportModifier)
                             .verticalScroll(scrollState)
                             .windowInsetsPadding(WindowInsets.statusBars)
                             .padding(top = 56.dp),
@@ -319,6 +328,7 @@ private fun WideEntityBrowseContent(
             }
         } else {
             val scrollState = rememberScrollState()
+            val scrollViewportModifier = RegisterControllerVerticalScroll(scrollState = scrollState)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -327,6 +337,7 @@ private fun WideEntityBrowseContent(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .then(scrollViewportModifier)
                         .verticalScroll(scrollState)
                         .padding(start = 40.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(34.dp),

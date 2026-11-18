@@ -1,5 +1,7 @@
 package com.nuvio.app.features.catalog
 
+import com.nuvio.app.core.ui.rememberAnimatedArtworkAnimation
+import com.nuvio.app.controller.RegisterControllerVerticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -122,6 +124,9 @@ fun CatalogScreen(
         initialFirstVisibleItemIndex = initialScrollPosition.firstVisibleItemIndex,
         initialFirstVisibleItemScrollOffset = initialScrollPosition.firstVisibleItemScrollOffset,
     )
+
+    // Lets the controller spatial engine scroll this grid when focus reaches the bottom edge.
+    val scrollViewportModifier = RegisterControllerVerticalScroll(lazyGridState = gridState)
     var headerHeightPx by remember { mutableIntStateOf(0) }
     var observedOfflineState by remember { mutableStateOf(false) }
     var catalogSortOptionName by rememberSaveable(target) { mutableStateOf(SearchSortOption.Relevance.name) }
@@ -234,7 +239,7 @@ fun CatalogScreen(
             LazyVerticalGrid(
                 columns = gridCells,
                 state = gridState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().then(scrollViewportModifier),
                 contentPadding = PaddingValues(
                     start = pageHorizontalPadding,
                     top = with(androidx.compose.ui.platform.LocalDensity.current) { headerHeightPx.toDp() } + 12.dp,
@@ -384,6 +389,7 @@ private fun CatalogHeader(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
+            .then(if (isDesktop) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier)
             .padding(horizontal = pageHorizontalPadding)
             .padding(top = if (isDesktop) 32.dp else 52.dp, bottom = 12.dp),
     ) {
@@ -470,11 +476,26 @@ private fun CatalogPosterTile(
                     ),
             ) {
                 if (item.poster != null) {
+                    val platformContext = coil3.compose.LocalPlatformContext.current
+                    val hasFallback = !item.rawPosterUrl.isNullOrBlank() && item.rawPosterUrl != item.poster
+                    val imageModel = remember(item.poster, item.rawPosterUrl, platformContext) {
+                        if (hasFallback) {
+                            coil3.request.ImageRequest.Builder(platformContext)
+                                .data(item.poster)
+                                .memoryCacheKeyExtras(
+                                    mapOf(com.nuvio.app.core.poster.CustomPosterFallbackInterceptor.FALLBACK_URL_KEY to item.rawPosterUrl!!)
+                                )
+                                .build()
+                        } else {
+                            item.poster
+                        }
+                    }
                     AsyncImage(
-                        model = item.poster,
+                        model = imageModel,
                         contentDescription = item.name,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
+                        desktopAnimation = rememberAnimatedArtworkAnimation(),
                     )
                 }
                 NuvioPosterWatchedOverlay(isWatched = isWatched)
@@ -577,7 +598,6 @@ private fun CatalogLoadingFooter() {
     ) {
         NuvioLoadingIndicator(
             modifier = Modifier.size(22.dp),
-            color = MaterialTheme.colorScheme.primary,
         )
     }
 }

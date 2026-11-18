@@ -33,6 +33,7 @@ const episode = document.getElementById("episode");
 const playbackMetadata = document.querySelector(".metadata");
 const streamTitle = document.getElementById("streamTitle");
 const providerName = document.getElementById("providerName");
+const playerBadges = document.getElementById("playerBadges");
 const resizeLabel = document.getElementById("resizeLabel");
 const speedLabel = document.getElementById("speedLabel");
 const subtitlesLabel = document.getElementById("subtitlesLabel");
@@ -53,6 +54,8 @@ const openingLogoFillClip = document.getElementById("openingLogoFillClip");
 const openingLogoFill = document.getElementById("openingLogoFill");
 const openingTitle = document.getElementById("openingTitle");
 const openingSpinner = document.getElementById("openingSpinner");
+const openingLoadingIndicator = window.createLoadingIndicator(openingSpinner);
+const bufferingLoadingIndicator = window.createLoadingIndicator(bufferingStatus.querySelector("canvas"));
 const openingStatus = document.getElementById("openingStatus");
 const openingMessage = document.getElementById("openingMessage");
 const openingProgressTrack = document.getElementById("openingProgressTrack");
@@ -71,6 +74,18 @@ const nextEpisodeStatus = document.getElementById("nextEpisodeStatus");
 const nextEpisodeAction = document.getElementById("nextEpisodeAction");
 const sourcesButton = document.getElementById("sourcesButton");
 const episodesButton = document.getElementById("episodesButton");
+const chaptersButton = document.getElementById("chaptersButton");
+const chaptersLabel = document.getElementById("chaptersLabel");
+const chapterTitle = document.getElementById("chapterTitle");
+const chapterMarks = document.getElementById("chapterMarks");
+const chaptersModal = document.getElementById("chaptersModal");
+const streamInfoButton = document.getElementById("streamInfoButton");
+const streamInfoLabel = document.getElementById("streamInfoLabel");
+const streamInfoModal = document.getElementById("streamInfoModal");
+const streamInfoContent = document.getElementById("streamInfoContent");
+const chaptersPanelTitle = document.getElementById("chaptersPanelTitle");
+const chaptersCloseButton = document.getElementById("chaptersCloseButton");
+const chapterList = document.getElementById("chapterList");
 const audioModal = document.getElementById("audioModal");
 const subtitleModal = document.getElementById("subtitleModal");
 const speedModal = document.getElementById("speedModal");
@@ -86,9 +101,6 @@ const subtitleStyleRail = document.getElementById("subtitleStyleRail");
 const subtitleStyleRailTitle = document.getElementById("subtitleStyleRailTitle");
 const addonSubtitleList = document.getElementById("addonSubtitleList");
 const subtitleStylePanel = document.getElementById("subtitleStylePanel");
-const customSubtitleStyleLabel = document.getElementById("customSubtitleStyleLabel");
-const customSubtitleStyleToggle = document.getElementById("customSubtitleStyleToggle");
-const customSubtitleStyleControls = document.getElementById("customSubtitleStyleControls");
 const subtitleDelayLabel = document.getElementById("subtitleDelayLabel");
 const subtitleDelayMinus = document.getElementById("subtitleDelayMinus");
 const subtitleDelayValue = document.getElementById("subtitleDelayValue");
@@ -105,6 +117,36 @@ const fontSizeValue = document.getElementById("fontSizeValue");
 const fontSizePlus = document.getElementById("fontSizePlus");
 const outlineLabel = document.getElementById("outlineLabel");
 const outlineToggle = document.getElementById("outlineToggle");
+const subtitleFontLabel = document.getElementById("subtitleFontLabel");
+const subtitleFontRow = document.getElementById("subtitleFontRow");
+const subtitleFontName = document.getElementById("subtitleFontName");
+const subtitleFontModal = document.getElementById("subtitleFontModal");
+const subtitleFontModalTitle = document.getElementById("subtitleFontModalTitle");
+const subtitleFontList = document.getElementById("subtitleFontList");
+const subtitleFontHint = document.getElementById("subtitleFontHint");
+const subtitleFontError = document.getElementById("subtitleFontError");
+const subtitleFontImport = document.getElementById("subtitleFontImport");
+const subtitleFontDone = document.getElementById("subtitleFontDone");
+const backgroundColorLabel = document.getElementById("backgroundColorLabel");
+const backgroundColorSwatches = document.getElementById("backgroundColorSwatches");
+const backgroundOpacityLabel = document.getElementById("backgroundOpacityLabel");
+const backgroundOpacityValue = document.getElementById("backgroundOpacityValue");
+const backgroundOpacityMinus = document.getElementById("backgroundOpacityMinus");
+const backgroundOpacityPlus = document.getElementById("backgroundOpacityPlus");
+const outlineColorSection = document.getElementById("outlineColorSection");
+const shadowOpacitySection = document.getElementById("shadowOpacitySection");
+const shadowSizeSection = document.getElementById("shadowSizeSection");
+let fontPickerOpen = false;
+const shadowLabel = document.getElementById("shadowLabel");
+const shadowToggle = document.getElementById("shadowToggle");
+const shadowOpacityLabel = document.getElementById("shadowOpacityLabel");
+const shadowOpacityValue = document.getElementById("shadowOpacityValue");
+const shadowOpacityMinus = document.getElementById("shadowOpacityMinus");
+const shadowOpacityPlus = document.getElementById("shadowOpacityPlus");
+const shadowSizeLabel = document.getElementById("shadowSizeLabel");
+const shadowSizeValue = document.getElementById("shadowSizeValue");
+const shadowSizeMinus = document.getElementById("shadowSizeMinus");
+const shadowSizePlus = document.getElementById("shadowSizePlus");
 const boldLabel = document.getElementById("boldLabel");
 const boldToggle = document.getElementById("boldToggle");
 const bottomOffsetLabel = document.getElementById("bottomOffsetLabel");
@@ -173,6 +215,7 @@ let state = {
   episodeText: "",
   streamTitle: "",
   providerName: "",
+  pauseOverlayEnabled: false,
   pauseOverlayWatchingLabel: "You're watching",
   pauseOverlayLogo: "",
   pauseOverlayEpisodeInfo: "",
@@ -180,6 +223,8 @@ let state = {
   pauseOverlayDescription: "",
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
+  holdToSpeedEnabled: true,
+  holdToSpeedValue: 2.0,
   isFullscreen: false,
   volumeLevel: null,
   subtitlesLabel: "Subs",
@@ -228,7 +273,6 @@ let state = {
   subtitleBuiltInTabLabel: "Built-in",
   subtitleAddonsTabLabel: "Addons",
   subtitleStyleTabLabel: "Style",
-  customSubtitleStyleLabel: "Use custom styling",
   forcedLabel: "Forced",
   noneLabel: "None",
   fetchSubtitlesLabel: "Tap to fetch subtitles",
@@ -251,6 +295,7 @@ let state = {
   onLabel: "On",
   offLabel: "Off",
   themeAccentColor: "#2f6fed",
+  themeAccentGradientColors: [],
   themeAccentStrongColor: "#3c7bff",
   themeOnAccentColor: "#fff",
   themeFocusColor: "#9ecaff",
@@ -258,9 +303,9 @@ let state = {
   themeSelectedSurfaceHoverColor: "#2d4565",
   themeSelectedRingColor: "rgba(47, 111, 237, .35)",
   themeTimelineFillColor: "#fff",
-  themeTimelineTrackColor: "rgba(255, 255, 255, .28)",
+  themeTimelineTrackColor: "rgba(255, 255, 255, .3)",
   themeBufferingColor: "#fff",
-  themeBufferingTrackColor: "rgba(255, 255, 255, .28)",
+  themeBufferingTrackColor: "rgba(255, 255, 255, .35)",
   themeControlForegroundColor: "#fff",
   themeSurfaceElevatedColor: "#16171d",
   themeSurfaceCardColor: "rgba(255, 255, 255, .08)",
@@ -289,6 +334,7 @@ let state = {
   nextEpisodeHeaderLabel: "Next episode",
   nextEpisodeTitle: "",
   nextEpisodeThumbnail: "",
+  nextEpisodeThumbnailBlurred: false,
   nextEpisodeStatus: "",
   nextEpisodeActionLabel: "Play",
   nextEpisodePlayable: false,
@@ -299,6 +345,7 @@ let state = {
   showExternalPlayer: false,
   durationMs: 0,
   positionMs: 0,
+  bufferedPositionMs: 0,
   audioTracks: [],
   subtitleTracks: [],
   sourceIsLoading: false,
@@ -327,7 +374,6 @@ let state = {
   isLoadingAddonSubtitles: false,
   selectedAddonSubtitleId: "",
   useCustomSubtitles: false,
-  customSubtitleStylingEnabled: true,
   subtitleDelayMs: 0,
   hasSelectedAddonSubtitle: false,
   subtitleAutoSyncCapturedPositionMs: -1,
@@ -363,6 +409,10 @@ let sourceVirtualOffsets = [];
 let sourceVirtualTotalHeight = 0;
 let sourceVirtualSpacer = null;
 let sourceVirtualRenderRaf = 0;
+let appliedRememberedVolume = false;
+let rememberedEpisodeSeason = null;
+let currentEpisodeStreamItems = [];
+let currentEpisodeItems = [];
 let selectedEpisodeSeason = null;
 let episodeStreamFilterId = "";
 let activeSubtitleLanguageKey = "";
@@ -371,8 +421,6 @@ let pendingIsPlaying = null;
 let pendingPlaybackTimer = 0;
 let lastNativeIsPlaying = true;
 let suppressNextPointerToggleClick = false;
-let pendingCustomSubtitleStyling = null;
-let pendingCustomSubtitleStylingTimer = 0;
 let pendingSpeedIndex = null;
 let pendingSpeedTimer = 0;
 let submitIntroDraft = {
@@ -410,26 +458,45 @@ let playerToastTimer = 0;
 let playerToastToken = 0;
 let pendingSettingToastCommand = "";
 let pendingSettingToastToken = 0;
+let timeLabelShowRemaining = false;
 let isPipLocked = false;
 const pipLockButton = document.getElementById("pipLockButton");
 const pipLockOverlay = document.getElementById("pipLockOverlay");
 const pipLockBadge = document.getElementById("pipLockBadge");
 const pipLockLabel = () => String(state.lockLabel || "Lock player controls").trim();
 const pipUnlockLabel = () => String(state.unlockLabel || "Unlock player controls").trim();
+const setTextContent = (element, text) => {
+  const value = String(text ?? "");
+  const only = element.firstChild;
+  if (only && only === element.lastChild && only.nodeType === 3) {
+    if (only.data !== value) only.data = value;
+  } else if (value || only) {
+    element.textContent = value;
+  }
+};
+
+const setAttr = (element, name, value) => {
+  const text = String(value);
+  if (element.getAttribute(name) !== text) element.setAttribute(name, text);
+};
+
 const syncPipLockLabels = () => {
   const lockLabel = isPipLocked ? pipUnlockLabel() : pipLockLabel();
   if (pipLockButton) {
-    pipLockButton.setAttribute("aria-label", lockLabel);
-    pipLockButton.setAttribute("title", lockLabel);
+    setAttr(pipLockButton, "aria-label", lockLabel);
+    setAttr(pipLockButton, "title", lockLabel);
   }
   if (pipLockBadge) {
     const unlockLabel = pipUnlockLabel();
-    pipLockBadge.setAttribute("aria-label", unlockLabel);
-    pipLockBadge.setAttribute("title", unlockLabel);
+    setAttr(pipLockBadge, "aria-label", unlockLabel);
+    setAttr(pipLockBadge, "title", unlockLabel);
   }
 };
 const setPipLocked = locked => {
   isPipLocked = locked;
+  if (locked && document.body.style.cursor && document.body.style.cursor.includes("resize")) {
+    document.body.style.cursor = "";
+  }
   root.classList.toggle("pip-locked", locked);
   if (pipLockButton) {
     pipLockButton.setAttribute("aria-pressed", String(locked));
@@ -480,20 +547,21 @@ const syncFullscreenButtons = () => {
   const isFullscreen = Boolean(state.isFullscreen);
   const icon = isFullscreen ? "#icon-fullscreen-exit" : "#icon-fullscreen";
   const label = isFullscreen ? "Exit fullscreen" : "Enter fullscreen";
-  if (fullscreenIcon) fullscreenIcon.setAttribute("href", icon);
-  if (openingFullscreenIcon) openingFullscreenIcon.setAttribute("href", icon);
-  if (fullscreenButton) fullscreenButton.setAttribute("aria-label", label);
-  if (openingFullscreenButton) openingFullscreenButton.setAttribute("aria-label", label);
+  if (fullscreenIcon) setAttr(fullscreenIcon, "href", icon);
+  if (openingFullscreenIcon) setAttr(openingFullscreenIcon, "href", icon);
+  if (fullscreenButton) setAttr(fullscreenButton, "aria-label", label);
+  if (openingFullscreenButton) setAttr(openingFullscreenButton, "aria-label", label);
 };
 
-const togglePlayerFullscreen = () => {
-  send("toggleFullscreen", 0);
+const togglePlayerFullscreen = (fromEscape = false) => {
+  send("toggleFullscreen", fromEscape ? 1 : 0);
 };
 
 const hidePlayerToast = token => {
   if (!playerToast || (token != null && token !== playerToastToken)) return;
   if (isSpeedBoosting) {
-    showPlayerToast("2x", { icon: "icon-speed", persistent: true });
+    const speedValueFormatted = formatSpeedBoostString(normalizedSpeedBoost());
+    showPlayerToast(`${speedValueFormatted}x`, { icon: "icon-speed", persistent: true });
     return;
   }
   playerToast.classList.remove("visible");
@@ -732,6 +800,21 @@ const cssColorOrFallback = (value, fallback) => {
 
 const applyTheme = () => {
   const style = document.documentElement.style;
+  const gradientColors = Array.isArray(state.themeAccentGradientColors)
+    ? state.themeAccentGradientColors.map(color => cssColorOrFallback(color, "")).filter(Boolean)
+    : [];
+  const loadingColors = gradientColors.length > 0
+    ? gradientColors
+    : [cssColorOrFallback(state.themeAccentColor, "#2f6fed")];
+  openingLoadingIndicator.setColors(loadingColors);
+  bufferingLoadingIndicator.setColors(loadingColors);
+  if (gradientColors.length > 1) {
+    style.setProperty("--theme-accent-gradient", `linear-gradient(to right, ${gradientColors.join(", ")})`);
+    style.setProperty("--theme-accent-gradient-vertical", `linear-gradient(to bottom, ${gradientColors.join(", ")})`);
+  } else {
+    style.removeProperty("--theme-accent-gradient");
+    style.removeProperty("--theme-accent-gradient-vertical");
+  }
   const setColor = (name, value, fallback) => {
     style.setProperty(name, cssColorOrFallback(value, fallback));
   };
@@ -743,9 +826,9 @@ const applyTheme = () => {
   setColor("--theme-selected-surface-hover", state.themeSelectedSurfaceHoverColor, "#2d4565");
   setColor("--theme-selected-ring", state.themeSelectedRingColor, "rgba(47, 111, 237, .35)");
   setColor("--theme-timeline-fill", state.themeTimelineFillColor, "#fff");
-  setColor("--theme-timeline-track", state.themeTimelineTrackColor, "rgba(255, 255, 255, .28)");
+  setColor("--theme-timeline-track", state.themeTimelineTrackColor, "rgba(255, 255, 255, .3)");
   setColor("--theme-buffering", state.themeBufferingColor, "#fff");
-  setColor("--theme-buffering-track", state.themeBufferingTrackColor, "rgba(255, 255, 255, .28)");
+  setColor("--theme-buffering-track", state.themeBufferingTrackColor, "rgba(255, 255, 255, .35)");
   setColor("--theme-control-foreground", state.themeControlForegroundColor, "#fff");
   setColor("--theme-surface-elevated", state.themeSurfaceElevatedColor, "#16171d");
   setColor("--theme-surface-card", state.themeSurfaceCardColor, "rgba(255, 255, 255, .08)");
@@ -754,6 +837,7 @@ const applyTheme = () => {
   setColor("--theme-text-secondary", state.themeTextSecondaryColor, "rgba(255, 255, 255, .72)");
   setColor("--theme-text-muted", state.themeTextMutedColor, "rgba(255, 255, 255, .6)");
   setColor("--theme-border-default", state.themeBorderDefaultColor, "rgba(255, 255, 255, .12)");
+  setColor("--theme-danger", state.themeDangerColor, "#e36a8a");
 };
 
 const formatTime = milliseconds => {
@@ -767,21 +851,77 @@ const formatTime = milliseconds => {
     : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 
-const setProgress = (positionMs, durationMs) => {
+const setProgress = (positionMs, durationMs, bufferedPositionMs) => {
   const percent = durationMs > 0 ? Math.max(0, Math.min(100, positionMs / durationMs * 100)) : 0;
+  const bufferPercent = bufferedPositionMs > 0 ?
+    Math.max(0, Math.min(100, bufferedPositionMs / durationMs * 100)) : 0;
   seek.value = Math.round(percent * 10);
   seek.style.setProperty("--progress", `${percent}%`);
-  positionLabel.textContent = formatTime(positionMs);
-  durationLabel.textContent = formatTime(durationMs);
+  seek.style.setProperty("--bufferProgress", `${bufferPercent}%`);
+  setTextContent(positionLabel, formatTime(positionMs));
+  setTextContent(durationLabel, formatTime(durationMs));
   if (timeLabel) {
-    timeLabel.textContent = `${formatTime(positionMs)} / ${formatTime(durationMs)}`;
+    durationMs = durationMs - (durationMs % 1000);
+    if (timeLabelShowRemaining) {
+      let remainingTimeMs = durationMs - positionMs + (positionMs % 1000 == 0 ? 0 : 1000);
+      setTextContent(timeLabel, `-${formatTime(remainingTimeMs)}`);
+    } else {
+      setTextContent(timeLabel, `${formatTime(positionMs)} / ${formatTime(durationMs)}`);
+    }
   }
-  syncVolumeControl();
 };
 
 const setText = (element, text) => {
-  element.textContent = text || "";
+  setTextContent(element, text || "");
   element.hidden = !text;
+};
+
+function formatCssColor(colorStr) {
+  if (!colorStr) return null;
+  let str = String(colorStr).trim();
+  if (!str) return null;
+  const hex = str.replace(/^#/, "");
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return '#' + hex;
+  }
+  if (/^[0-9a-fA-F]{8}$/.test(hex)) {
+    const a = parseInt(hex.substring(0, 2), 16) / 255;
+    const r = parseInt(hex.substring(2, 4), 16);
+    const g = parseInt(hex.substring(4, 6), 16);
+    const b = parseInt(hex.substring(6, 8), 16);
+    if (a <= 0) return null;
+    return `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
+  }
+  return str.startsWith('#') ? str : '#' + str;
+}
+
+let playerBadgesSignature = "";
+
+const renderPlayerBadges = () => {
+  const badges = Array.isArray(state.badges) ? state.badges : [];
+  const signature = JSON.stringify(badges);
+  if (signature === playerBadgesSignature) return;
+  playerBadgesSignature = signature;
+  playerBadges.textContent = "";
+  badges.forEach((badge) => {
+    const chip = document.createElement("span");
+    chip.className = "player-badge";
+    if (String(badge.tagStyle || "").toLowerCase() === "filled") {
+      const bg = formatCssColor(badge.tagColor);
+      if (bg) chip.style.background = bg;
+    }
+    const borderColor = formatCssColor(badge.borderColor);
+    if (borderColor) chip.style.borderColor = borderColor;
+    const image = document.createElement("img");
+    image.alt = badge.name || "";
+    image.draggable = false;
+    image.addEventListener("error", () => chip.remove());
+    image.addEventListener("load", () => { playerBadges.hidden = !playerBadges.childElementCount; });
+    image.src = badge.imageUrl;
+    chip.appendChild(image);
+    playerBadges.appendChild(chip);
+  });
+  playerBadges.hidden = badges.length === 0;
 };
 
 const setVisible = (element, visible) => {
@@ -793,8 +933,8 @@ const setActionButtonLabel = (command, label) => {
   if (!button) return;
   const text = String(label || "").trim();
   if (!text) return;
-  button.setAttribute("aria-label", text);
-  button.setAttribute("title", text);
+  setAttr(button, "aria-label", text);
+  setAttr(button, "title", text);
 };
 
 const setImageVisualState = (element, stateName) => {
@@ -911,8 +1051,11 @@ const modalByName = {
   speed: speedModal,
   sources: sourceModal,
   episodes: episodesModal,
+  chapters: chaptersModal,
+  streamInfo: streamInfoModal,
   submitIntro: submitIntroModal,
   p2pConsent: p2pConsentModal,
+  party: partyModal,
 };
 const modalElements = Object.values(modalByName);
 const modalCloseTimers = new Map();
@@ -957,12 +1100,15 @@ const setModalVisibility = (modal, visible, animated = true) => {
 const closePlayerModal = (notifyDismiss = false, animated = true) => {
   const closingModal = activeModal;
   activeModal = "";
+  if (fontPickerOpen) setFontPickerOpen(false);
   modalElements.forEach(modal => {
     setModalVisibility(modal, false, animated);
   });
   if (notifyDismiss && closingModal === "p2pConsent") {
     send("cancelP2pForPlayerControls", 0);
   }
+  if (closingModal === "episodes") onEpisodesModalClosed();
+  if (closingModal === "party") onPartyModalClosed();
   renderChrome();
 };
 
@@ -972,6 +1118,8 @@ const openPlayerModal = modal => {
     closePlayerModal(false);
     return;
   }
+  if (activeModal === "party" && modal !== "party") onPartyModalClosed();
+  if (modal === "party" && activeModal !== "party") onPartyModalOpened();
   activeModal = modal;
   if (modal === "submitIntro") {
     const contentKey = state.submitIntroContentKey || "";
@@ -988,11 +1136,19 @@ const openPlayerModal = modal => {
   if (modal === "subtitles") {
     resetSubtitleSelectionState();
   }
-  renderActiveModal();
+  renderActiveModal(modal === "chapters");
   modalElements.forEach(modalElement => {
     setModalVisibility(modalElement, modalElement === targetModal);
   });
   renderChrome();
+};
+
+const onEpisodesModalClosed = () => {
+  currentEpisodeItems = [];
+  currentEpisodeStreamItems = [];
+  selectedEpisodeSeason = null;
+  episodeStreamFilterId = "";
+  send("backToEpisodes", 0);
 };
 
 const normalizeTracks = tracks =>
@@ -1120,6 +1276,7 @@ const subtitleSelectionOptions = () => normalizeItems(state.subtitleOptionItems)
   title: String(item.title || ""),
   metadata: String(item.metadata || ""),
   selected: Boolean(item.isSelected),
+  autoSynced: Boolean(item.isAutoSynced),
   index: Number(item.index) || 0,
 }));
 
@@ -1153,6 +1310,7 @@ const appendSubtitleLanguageRow = item => {
     activeSubtitleLanguageKey = item.key;
     const options = subtitleSelectionOptions().filter(option => option.languageKey === item.key);
     pendingSubtitleOptionId = options.some(option => option.id === pendingSubtitleOptionId) ? pendingSubtitleOptionId : "";
+    showHiddenSubtitles();
     if (item.key === "__off__") send("selectBuiltInSubtitleTrack", -1);
     renderSubtitleModal();
     if (event.detail === 0 && item.key !== "__off__") {
@@ -1183,16 +1341,29 @@ const appendSubtitleOptionRow = option => {
   row.addEventListener("click", event => {
     event.stopPropagation();
     pendingSubtitleOptionId = option.id;
+    showHiddenSubtitles();
     if (option.kind === "builtIn") send("selectBuiltInSubtitleTrack", option.index);
     else send("selectAddonSubtitle", option.index);
     renderSubtitleModal();
   });
   const copy = document.createElement("span");
   copy.className = "subtitle-option-copy";
+  const sourceRow = document.createElement("span");
+  sourceRow.className = "subtitle-source-row";
   const source = document.createElement("span");
   source.className = "subtitle-source-chip";
   source.textContent = option.sourceLabel;
-  copy.appendChild(source);
+  sourceRow.appendChild(source);
+  if (option.autoSynced) {
+    const chip = document.createElement("span");
+    chip.className = "autosynced-chip";
+    chip.innerHTML = '<svg aria-hidden="true"><use href="#icon-sync"></use></svg>';
+    const text = document.createElement("span");
+    text.textContent = state.autoSyncedLabel || "Auto synced";
+    chip.appendChild(text);
+    sourceRow.appendChild(chip);
+  }
+  copy.appendChild(sourceRow);
   const title = document.createElement("span");
   title.className = "subtitle-option-title";
   title.textContent = option.title;
@@ -1339,27 +1510,12 @@ const renderAutoSyncCues = () => {
 
 const renderSubtitleStylePanel = () => {
   const style = state.subtitleStyle || {};
-  const storedCustomStyling = state.customSubtitleStylingEnabled !== false;
-  if (pendingCustomSubtitleStyling !== null && pendingCustomSubtitleStyling === storedCustomStyling) {
-    pendingCustomSubtitleStyling = null;
-    window.clearTimeout(pendingCustomSubtitleStylingTimer);
-    pendingCustomSubtitleStylingTimer = 0;
-  }
-  const customStylingEnabled = pendingCustomSubtitleStyling ?? storedCustomStyling;
   subtitleDelayLabel.textContent = state.subtitleDelayLabel || "Subtitle Delay";
   subtitleDelayValue.textContent = formatDelay(state.subtitleDelayMs);
   subtitleDelayReset.textContent = state.resetLabel || "Reset";
   autoSyncLabel.textContent = state.autoSyncLabel || "Auto Sync";
   autoSyncReload.textContent = state.reloadSmallLabel || "Reload";
   autoSyncCapture.textContent = state.captureLineLabel || "Capture";
-  customSubtitleStyleLabel.textContent = state.customSubtitleStyleLabel || "Use custom styling";
-  customSubtitleStyleToggle.textContent = customStylingEnabled
-    ? (state.onLabel || "On")
-    : (state.offLabel || "Off");
-  customSubtitleStyleToggle.classList.toggle("primary", customStylingEnabled);
-  customSubtitleStyleToggle.setAttribute("aria-pressed", customStylingEnabled ? "true" : "false");
-  customSubtitleStyleControls.classList.toggle("disabled", !customStylingEnabled);
-  customSubtitleStyleControls.setAttribute("aria-disabled", customStylingEnabled ? "false" : "true");
   fontSizeLabel.textContent = state.fontSizeLabel || "Font Size";
   fontSizeValue.textContent = `${Number(style.fontSizeSp) || 18}sp`;
   outlineLabel.textContent = state.outlineLabel || "Outline";
@@ -1376,9 +1532,82 @@ const renderSubtitleStylePanel = () => {
   textOpacityValue.textContent = `${textAlpha}%`;
   outlineColorLabel.textContent = state.outlineColorLabel || "Outline Color";
   subtitleStyleReset.textContent = state.resetDefaultsLabel || "Reset Defaults";
+  subtitleFontLabel.textContent = state.fontLabel || "Font";
+  const activeFont = (state.subtitleFonts || []).find(font => font.id === (style.fontId || "default"));
+  subtitleFontName.textContent = activeFont ? activeFont.label : ((state.subtitleFonts || [])[0] || {}).label || "";
+  renderFontPicker();
+  shadowLabel.textContent = state.shadowLabel || "Drop shadow";
+  shadowToggle.textContent = style.shadowEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
+  shadowToggle.classList.toggle("primary", Boolean(style.shadowEnabled));
+  shadowOpacityLabel.textContent = state.shadowOpacityLabel || "Shadow opacity";
+  shadowOpacityValue.textContent = `${Number(style.shadowOpacity) || 0}%`;
+  shadowSizeLabel.textContent = state.shadowSizeLabel || "Shadow size";
+  shadowSizeValue.textContent = String(Number(style.shadowSize) || 1);
   renderSwatches(subtitleColorSwatches, state.subtitleColorSwatches, style.textColor, "subtitleTextColor");
-  renderSwatches(outlineColorSwatches, state.subtitleOutlineColorSwatches, style.outlineColor, "subtitleOutlineColor");
+  renderSwatches(outlineColorSwatches, state.subtitleColorSwatches, style.outlineColor, "subtitleOutlineColor");
+  backgroundColorLabel.textContent = state.backgroundColorLabel || "Background Color";
+  backgroundOpacityLabel.textContent = state.backgroundOpacityLabel || "Background opacity";
+  backgroundOpacityValue.textContent = `${Math.round((parseArgb(style.backgroundColor).alpha / 255) * 100)}%`;
+  renderSwatches(backgroundColorSwatches, state.subtitleColorSwatches, style.backgroundColor, "subtitleBackgroundColor");
+  outlineColorSection.hidden = !style.outlineEnabled;
+  shadowOpacitySection.hidden = !style.shadowEnabled;
+  shadowSizeSection.hidden = !style.shadowEnabled;
   renderAutoSyncCues();
+};
+
+const isBuiltInFont = id => ["default", "sans", "serif", "mono"].includes(id);
+const fontSampleFamily = id => ({ sans: "sans-serif", serif: "serif", mono: "monospace" })[id] || "inherit";
+
+const renderFontPicker = () => {
+  subtitleFontModalTitle.textContent = state.fontLabel || "Font";
+  subtitleFontImport.textContent = state.fontImportLabel || "Import font";
+  subtitleFontDone.textContent = state.doneLabel || "Done";
+  subtitleFontHint.textContent = state.fontImportHint || "";
+  subtitleFontError.textContent = state.fontImportError || "";
+  subtitleFontError.hidden = !state.subtitleFontImportFailed;
+  if (!fontPickerOpen) return;
+  const selectedId = (state.subtitleStyle || {}).fontId || "default";
+  subtitleFontList.textContent = "";
+  (state.subtitleFonts || []).forEach((font, index) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "font-option";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `track-row${font.id === selectedId ? " selected" : ""}`;
+    row.addEventListener("click", event => {
+      event.stopPropagation();
+      send("subtitleFont", index);
+    });
+    const sample = document.createElement("span");
+    sample.className = "font-option-sample";
+    sample.style.fontFamily = fontSampleFamily(font.id);
+    sample.textContent = "Aa";
+    const label = document.createElement("span");
+    label.className = "track-label";
+    label.textContent = font.label;
+    row.append(sample, label);
+    if (font.id === selectedId) row.appendChild(buildCheckIcon());
+    wrapper.appendChild(row);
+    if (!isBuiltInFont(font.id)) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "panel-button";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", (state.fontRemoveLabel || "Remove {name}").replace("{name}", font.label));
+      remove.addEventListener("click", event => {
+        event.stopPropagation();
+        send("subtitleFontRemove", index);
+      });
+      wrapper.appendChild(remove);
+    }
+    subtitleFontList.appendChild(wrapper);
+  });
+};
+
+const setFontPickerOpen = open => {
+  fontPickerOpen = open;
+  if (open) renderFontPicker();
+  setModalVisibility(subtitleFontModal, open);
 };
 
 const renderSubtitleModal = () => {
@@ -1388,6 +1617,63 @@ const renderSubtitleModal = () => {
   subtitleStyleRailTitle.textContent = state.subtitleStyleTabLabel || "Style";
   renderSubtitleSelectionRails();
 };
+
+const filterRows = document.querySelectorAll(".filter-row");
+let filterRowPointerId = null;
+let filterRowStartX = null;
+let filterRowStartY = null;
+let filterRowDragging = false;
+
+const resetFilterRowDragHelpers = () => {
+  filterRowPointerId = null;
+  filterRowStartX = null;
+  filterRowStartY = null;
+  filterRowDragging = false;
+};
+
+const releaseFilterRowPointerCaptures = () => {
+  filterRows.forEach(filterRow => {
+    if (filterRow?.hasPointerCapture(filterRowPointerId)) {
+      filterRow.releasePointerCapture(filterRowPointerId);
+      resetFilterRowDragHelpers();
+    }
+  });
+};
+
+filterRows.forEach(filterRow => {
+  const setXYValues = (event) => {
+    filterRowStartX = event.screenX;
+    filterRowStartY = event.screenY;
+  };
+  const prepareDrag = (event) => {
+    resetFilterRowDragHelpers();
+    setXYValues(event);
+  }
+  const shouldDragStart = (event) => {
+    const dx = Math.abs(event.screenX - filterRowStartX);
+    const dy = Math.abs(event.screenY - filterRowStartY);
+    if (dx > 8 || dy > 8) {
+      filterRow.setPointerCapture(event.pointerId);
+      filterRowPointerId = event.pointerId;
+      filterRowDragging = true;
+    }
+  };
+  const clearDrag = (event) => {
+    filterRow.releasePointerCapture(event.pointerId);
+    resetFilterRowDragHelpers();
+  };
+  const drag = (event) => {
+    if (filterRowStartX && !filterRowDragging) shouldDragStart(event);
+    if (filterRow.hasPointerCapture(event.pointerId)) filterRow.scrollLeft -= event.movementX;
+  };
+
+  filterRow.addEventListener("pointerdown", (event) => {
+    if (event.button == 0) prepareDrag(event);
+  });
+  filterRow.addEventListener("pointermove", drag);
+  filterRow.addEventListener("pointerup", clearDrag);
+  filterRow.addEventListener("pointercancel", clearDrag);
+});
 
 const normalizeItems = items =>
   Array.isArray(items) ? items.filter(item => item && typeof item === "object") : [];
@@ -1406,7 +1692,10 @@ const appendFilterChip = (container, label, selected, onSelect, isLoading = fals
   chip.appendChild(text);
   chip.addEventListener("click", event => {
     event.stopPropagation();
-    onSelect();
+    if (!selected) {
+      chip.scrollIntoView({ behavior: "smooth", container: "nearest", inline: "start" });
+      onSelect();
+    }
   });
   container.appendChild(chip);
 };
@@ -1518,25 +1807,6 @@ const buildSourceRow = (item, onSelect) => {
     subtitle.className = "stream-subtitle";
     subtitle.textContent = item.subtitle;
   }
-
-function formatCssColor(colorStr) {
-  if (!colorStr) return null;
-  let str = String(colorStr).trim();
-  if (!str) return null;
-  const hex = str.replace(/^#/, "");
-  if (/^[0-9a-fA-F]{6}$/.test(hex)) {
-    return '#' + hex;
-  }
-  if (/^[0-9a-fA-F]{8}$/.test(hex)) {
-    const a = parseInt(hex.substring(0, 2), 16) / 255;
-    const r = parseInt(hex.substring(2, 4), 16);
-    const g = parseInt(hex.substring(4, 6), 16);
-    const b = parseInt(hex.substring(6, 8), 16);
-    if (a <= 0) return null;
-    return `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
-  }
-  return str.startsWith('#') ? str : '#' + str;
-}
 
   const isTopPlacement = (item.badgePlacement || "").toUpperCase() === "TOP";
   const badges = Array.isArray(item.badges) ? item.badges.filter(b => b && b.imageURL) : [];
@@ -1671,7 +1941,7 @@ const requestSourceVirtualRender = () => {
   sourceVirtualRenderRaf = window.requestAnimationFrame(renderSourceVirtualRows);
 };
 
-const renderSourceModal = () => {
+const renderSourceModal = (modalOpened = false) => {
   sourcePanelTitle.textContent = state.sourcesPanelTitle || "Sources";
   sourceReloadButton.textContent = state.reloadLabel || "Reload";
   sourceCloseButton.textContent = state.panelCloseLabel || "Close";
@@ -1685,8 +1955,15 @@ const renderSourceModal = () => {
   renderFilterRow(sourceFilterList, filters, sourceFilterId, id => {
     sourceFilterId = id;
     sourceList.scrollTop = 0;
-    renderSourceModal();
+    renderSourceModal(true);
   });
+
+  if (!modalOpened || !sourceVirtualSpacer) {
+    window.requestAnimationFrame(() => {
+      sourceFilterList.querySelector(".filter-chip.selected")
+        ?.scrollIntoView({ behavior: "instant", container: "nearest", inline: "start" });
+    });
+  }
 
   sourceList.textContent = "";
   sourceList.classList.remove("virtualized");
@@ -1717,7 +1994,7 @@ const renderSourceModal = () => {
   sourceVirtualSpacer.className = "source-virtual-spacer";
   sourceList.appendChild(sourceVirtualSpacer);
   rebuildSourceVirtualLayout();
-  renderSourceVirtualRows();
+  requestSourceVirtualRender();
 };
 
 const appendEpisodeRow = (container, item) => {
@@ -1775,10 +2052,11 @@ const appendEpisodeRow = (container, item) => {
   container.appendChild(row);
 };
 
-const ensureEpisodeSeason = () => {
+const ensureEpisodeSeason = (modalOpened) => {
   const seasons = normalizeItems(state.episodeSeasons);
   if (seasons.length === 0) {
     selectedEpisodeSeason = null;
+    rememberedEpisodeSeason = null;
     return null;
   }
   if (
@@ -1787,15 +2065,23 @@ const ensureEpisodeSeason = () => {
   ) {
     const preferred = seasons.find(season => Boolean(season.isSelected)) || seasons[0];
     selectedEpisodeSeason = Number(preferred.season) || 0;
+    rememberedEpisodeSeason = selectedEpisodeSeason;
   }
-  return selectedEpisodeSeason;
+  return modalOpened ? selectedEpisodeSeason : rememberedEpisodeSeason;
 };
 
-const renderEpisodeList = () => {
+const compareArrays = (prevArray, currArray) => {
+  if (prevArray === null || currArray === null) return false;
+  if (!Array.isArray(prevArray) || !Array.isArray(currArray)) return false;
+  if (prevArray.length !== currArray.length) return false;
+  return (JSON.stringify(currArray) === JSON.stringify(prevArray));
+};
+
+const renderEpisodeList = (modalOpened = false) => {
   episodesPanelTitle.textContent = state.episodesPanelTitle || "Episodes";
   episodesCloseButton.textContent = state.panelCloseLabel || "Close";
 
-  const selectedSeason = ensureEpisodeSeason();
+  const selectedSeason = ensureEpisodeSeason(modalOpened);
   const seasons = normalizeItems(state.episodeSeasons);
   renderFilterRow(
     seasonFilterList,
@@ -1803,23 +2089,45 @@ const renderEpisodeList = () => {
     selectedSeason == null ? "" : String(selectedSeason),
     id => {
       selectedEpisodeSeason = Number(id);
-      renderEpisodeList();
+      currentEpisodeItems = [];
+      renderEpisodeList(true);
     },
   );
 
-  episodeList.textContent = "";
+  if (!modalOpened) {
+    window.requestAnimationFrame(() => {
+      seasonFilterList.querySelector(".filter-chip.selected")
+        ?.scrollIntoView({ behavior: "instant", container: "nearest", inline: "start" });
+    });
+  }
+
   let items = normalizeItems(state.episodeItems);
   if (selectedSeason != null) {
     items = items.filter(item => Number(item.season) === Number(selectedSeason));
   }
   if (items.length === 0) {
+    episodeList.textContent = "";
     appendEmptyTrackState(episodeList, state.noEpisodesLabel || "No episodes available");
     return;
   }
-  items.forEach(item => appendEpisodeRow(episodeList, item));
+
+  if (!compareArrays(currentEpisodeItems, items)) {
+    episodeList.textContent = "";
+    items.forEach(item => appendEpisodeRow(episodeList, item));
+    currentEpisodeItems = items;
+
+    window.requestAnimationFrame(() => {
+      const selectedEpisode = episodeList.querySelector(".track-row.episode-row.selected");
+      if (selectedEpisode) {
+        selectedEpisode.scrollIntoView({ behavior: "instant", container: "nearest", block: "start" });
+      } else {
+        episodeList.scrollTop = 0;
+      }
+    });
+  }
 };
 
-const renderEpisodeStreams = () => {
+const renderEpisodeStreams = (modalOpened = false) => {
   streamsPanelTitle.textContent = state.streamsPanelTitle || "Streams";
   episodeBackButton.textContent = state.backLabel || "Back";
   episodeReloadButton.textContent = state.reloadLabel || "Reload";
@@ -1833,37 +2141,50 @@ const renderEpisodeStreams = () => {
   }
   renderFilterRow(episodeStreamFilterList, filters, episodeStreamFilterId, id => {
     episodeStreamFilterId = id;
-    renderEpisodeStreams();
+    episodeStreamList.scrollTop = 0;
+    currentEpisodeStreamItems = [];
+    renderEpisodeStreams(true);
   });
 
-  episodeStreamList.textContent = "";
+  if (!modalOpened && currentEpisodeStreamItems?.length === 0) {
+    window.requestAnimationFrame(() => {
+      episodeStreamFilterList.querySelector(".filter-chip.selected")
+        ?.scrollIntoView({ behavior: "instant", container: "nearest", inline: "start" });
+    });
+  }
+
   let items = normalizeItems(state.episodeStreamItems);
   if (episodeStreamFilterId) {
     items = items.filter(item => String(item.filterId || "") === episodeStreamFilterId);
   }
   if (items.length === 0) {
+    episodeStreamList.textContent = "";
     appendEmptyTrackState(
       episodeStreamList,
       state.episodeStreamsIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
     );
     return;
   }
-  items.forEach(item => {
-    episodeStreamList.appendChild(buildSourceRow(item, selected => {
-      send("selectEpisodeStream", Number(selected.index) || 0);
-      window.setTimeout(closePlayerModal, 120);
-    }));
-  });
+  if (!compareArrays(currentEpisodeStreamItems, items)) {
+    episodeStreamList.textContent = "";
+    items.forEach(item => {
+      episodeStreamList.appendChild(buildSourceRow(item, selected => {
+        send("selectEpisodeStream", Number(selected.index) || 0);
+        window.setTimeout(closePlayerModal, 120);
+      }));
+    });
+    currentEpisodeStreamItems = items;
+  };
 };
 
-const renderEpisodesModal = () => {
+const renderEpisodesModal = (modalOpened = false) => {
   const showStreams = Boolean(state.episodeStreamsVisible);
   episodeListView.hidden = showStreams;
   episodeStreamsView.hidden = !showStreams;
   if (showStreams) {
     renderEpisodeStreams();
   } else {
-    renderEpisodeList();
+    renderEpisodeList(modalOpened);
   }
 };
 
@@ -1906,22 +2227,220 @@ const renderP2pConsentModal = () => {
   p2pConsentEnableButton.textContent = state.p2pConsentEnableLabel || "Enable P2P";
 };
 
-const renderActiveModal = () => {
+const formatChapterClock = ms => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = value => String(value).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+};
+
+const currentChapterIndex = chapters => {
+  const positionMs = Math.max(0, Number(state.positionMs) || 0);
+  let index = -1;
+  chapters.forEach((chapter, i) => {
+    if (chapter.startMs <= positionMs) index = i;
+  });
+  return index;
+};
+
+let chapterListSignature = "";
+
+let streamInfoSignature = "";
+
+const renderStreamInfoModal = () => {
+  const sections = Array.isArray(state.streamInfoSections) ? state.streamInfoSections : [];
+  const signature = JSON.stringify(sections);
+  if (signature === streamInfoSignature) return;
+  streamInfoSignature = signature;
+  streamInfoContent.textContent = "";
+  sections.forEach(section => {
+    const block = document.createElement("div");
+    block.className = "stream-info-section";
+    const title = document.createElement("div");
+    title.className = "stream-info-section-title";
+    title.textContent = String(section.title || "").toUpperCase();
+    block.appendChild(title);
+    if (section.name) {
+      const head = document.createElement("div");
+      head.className = "stream-info-source";
+      if (section.logo) {
+        const logo = document.createElement("img");
+        logo.className = "stream-info-logo";
+        logo.alt = "";
+        logo.draggable = false;
+        logo.addEventListener("error", () => logo.remove());
+        logo.src = section.logo;
+        head.appendChild(logo);
+      }
+      const names = document.createElement("div");
+      names.className = "stream-info-names";
+      const name = document.createElement("div");
+      name.className = "stream-info-name";
+      name.textContent = section.name;
+      names.appendChild(name);
+      if (section.subtitle) {
+        const subtitle = document.createElement("div");
+        subtitle.className = "stream-info-secondary";
+        subtitle.textContent = section.subtitle;
+        names.appendChild(subtitle);
+      }
+      head.appendChild(names);
+      block.appendChild(head);
+      if (section.description) {
+        const description = document.createElement("div");
+        description.className = "stream-info-secondary";
+        description.textContent = section.description;
+        block.appendChild(description);
+      }
+    }
+    if (Array.isArray(section.items) && section.items.length) {
+      const row = document.createElement("div");
+      row.className = "stream-info-row";
+      section.items.forEach(item => {
+        const cell = document.createElement("div");
+        cell.className = "stream-info-item";
+        const label = document.createElement("div");
+        label.className = "stream-info-label";
+        label.textContent = item.label;
+        const value = document.createElement("div");
+        value.className = "stream-info-value";
+        value.textContent = item.value;
+        cell.append(label, value);
+        row.appendChild(cell);
+      });
+      block.appendChild(row);
+    }
+    streamInfoContent.appendChild(block);
+  });
+};
+
+const renderChaptersModal = (modalOpened = false) => {
+  const chapters = Array.isArray(state.chapters) ? state.chapters : [];
+  const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  const positionMs = Math.max(0, Number(state.positionMs) || 0);
+  chaptersPanelTitle.textContent = state.chaptersPanelTitle || "Chapters";
+  chaptersCloseButton.textContent = state.panelCloseLabel || "Close";
+  const signature = JSON.stringify(chapters);
+  if (signature !== chapterListSignature) {
+    chapterListSignature = signature;
+    chapterList.textContent = "";
+    chapters.forEach((chapter, index) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "chapter-row";
+      row.addEventListener("click", event => {
+        event.stopPropagation();
+        send("selectChapter", index);
+        window.setTimeout(closePlayerModal, 120);
+      });
+      const main = document.createElement("span");
+      main.className = "chapter-row-main";
+      const lead = document.createElement("span");
+      lead.className = "chapter-row-lead";
+      lead.textContent = String(index + 1);
+      const name = document.createElement("span");
+      name.className = "chapter-row-name";
+      name.textContent = chapter.title;
+      const time = document.createElement("span");
+      time.className = "chapter-row-time";
+      time.textContent = formatChapterClock(chapter.startMs);
+      main.append(lead, name, time);
+      const extra = document.createElement("span");
+      extra.className = "chapter-row-extra";
+      extra.hidden = true;
+      const bar = document.createElement("span");
+      bar.className = "chapter-row-bar";
+      bar.appendChild(document.createElement("span"));
+      const remaining = document.createElement("span");
+      remaining.className = "chapter-row-remaining";
+      extra.append(bar, remaining);
+      row.append(main, extra);
+      chapterList.appendChild(row);
+    });
+  }
+  const current = currentChapterIndex(chapters);
+  Array.from(chapterList.children).forEach((row, index) => {
+    const isCurrent = index === current;
+    row.classList.toggle("current", isCurrent);
+    const lead = row.querySelector(".chapter-row-lead");
+    const hasIcon = lead.firstElementChild !== null;
+    if (isCurrent && !hasIcon) {
+      lead.innerHTML = '<svg aria-hidden="true"><use href="#icon-play"></use></svg>';
+    } else if (!isCurrent && hasIcon) {
+      lead.textContent = String(index + 1);
+    }
+    const extra = row.querySelector(".chapter-row-extra");
+    extra.hidden = !isCurrent;
+    if (!isCurrent) return;
+    const startMs = chapters[index].startMs;
+    const endMs = chapters[index + 1] ? chapters[index + 1].startMs : durationMs;
+    if (endMs > startMs) {
+      const fraction = Math.min(1, Math.max(0, (positionMs - startMs) / (endMs - startMs)));
+      row.querySelector(".chapter-row-bar > span").style.width = `${fraction * 100}%`;
+      row.querySelector(".chapter-row-remaining").textContent = (state.chapterRemainingTemplate || "{time} left")
+        .replace("{time}", formatChapterClock(Math.max(0, endMs - positionMs)));
+    }
+  });
+  if (modalOpened && current >= 0) {
+    const row = chapterList.children[current];
+    if (row) row.scrollIntoView({ block: "center" });
+  }
+};
+
+let chapterMarksSignature = "";
+
+const renderChapterMarks = () => {
+  const chapters = Array.isArray(state.chapters) ? state.chapters : [];
+  const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  const signature = `${durationMs}|${JSON.stringify(chapters.map(chapter => chapter.startMs))}`;
+  if (signature !== chapterMarksSignature) {
+    chapterMarksSignature = signature;
+    chapterMarks.textContent = "";
+    if (durationMs > 0) {
+      chapters.forEach(chapter => {
+        const fraction = chapter.startMs / durationMs;
+        if (fraction <= 0 || fraction >= 1) return;
+        const mark = document.createElement("span");
+        mark.className = "chapter-mark";
+        mark.style.left = `${fraction * 100}%`;
+        chapterMarks.appendChild(mark);
+      });
+    }
+  }
+  const index = currentChapterIndex(chapters);
+  setText(chapterTitle, index >= 0 && state.chapterTitleEnabled !== false ? chapters[index].title : "");
+};
+
+const renderActiveModal = (modalOpened = false) => {
   if (activeModal === "audio") renderAudioTrackList();
   if (activeModal === "subtitles") renderSubtitleModal();
   if (activeModal === "speed") renderSpeedOptionList();
-  if (activeModal === "sources") renderSourceModal();
-  if (activeModal === "episodes") renderEpisodesModal();
+  if (activeModal === "sources") renderSourceModal(modalOpened);
+  if (activeModal === "episodes") renderEpisodesModal(modalOpened);
+  if (activeModal === "chapters") renderChaptersModal(modalOpened);
+  if (activeModal === "streamInfo") renderStreamInfoModal();
   if (activeModal === "submitIntro") renderSubmitIntroModal();
   if (activeModal === "p2pConsent") renderP2pConsentModal();
+  if (activeModal === "party") renderPartyModal();
 };
 
 window.nuvioNativeViewportChanged = () => {
   root.classList.add("native-resizing");
   window.clearTimeout(nativeViewportTimer);
+  const timeoutMs = state.isInPip ? 5000 : 180;
   nativeViewportTimer = window.setTimeout(() => {
     root.classList.remove("native-resizing");
-  }, 180);
+  }, timeoutMs);
+  syncSkipPromptPlacement(skipPrompt.classList.contains("visible"));
+  if (activeModal) renderActiveModal();
+};
+
+window.nuvioNativeResizeEnded = () => {
+  window.clearTimeout(nativeViewportTimer);
+  root.classList.remove("native-resizing");
+  noteChromeActivity(true);
   syncSkipPromptPlacement(skipPrompt.classList.contains("visible"));
   if (activeModal) renderActiveModal();
 };
@@ -1937,6 +2456,8 @@ const trackListSignature = tracks =>
     ].join(":"))
     .join("|");
 
+let openingHideTimer = 0;
+
 const renderOpeningOverlay = suppress => {
   const progress = normalizedOpeningProgress();
   const artworkUrl = setImageSource(openingArtwork, state.openingArtwork);
@@ -1951,6 +2472,15 @@ const renderOpeningOverlay = suppress => {
   const messageText = String(state.openingMessage || "").trim();
   const showHorizontalProgress = hasProgress && !logoUrl;
 
+  window.clearTimeout(openingHideTimer);
+  if (showOpening) {
+    if (openingOverlay.hidden) {
+      openingOverlay.hidden = false;
+      void openingOverlay.offsetWidth;
+    }
+  } else if (!openingOverlay.hidden) {
+    openingHideTimer = window.setTimeout(() => { openingOverlay.hidden = true; }, 260);
+  }
   root.classList.toggle("opening-active", showOpening);
   openingOverlay.classList.toggle("visible", showOpening);
   openingOverlay.classList.toggle("has-artwork", Boolean(artworkUrl));
@@ -1965,6 +2495,7 @@ const renderOpeningOverlay = suppress => {
   openingTitle.textContent = titleText;
   openingTitle.hidden = Boolean(logoUrl || !titleText);
   openingSpinner.hidden = Boolean(logoUrl || titleText);
+  openingLoadingIndicator.setActive(showOpening && !openingSpinner.hidden);
 
   openingMessage.textContent = messageText;
   openingStatus.hidden = !(messageText || showHorizontalProgress);
@@ -2080,6 +2611,7 @@ const renderNativePlaybackPrompts = () => {
 
   const showNextEpisode = Boolean(state.nextEpisodeVisible);
   const nextThumbUrl = setImageSource(nextEpisodeThumb, state.nextEpisodeThumbnail);
+  const blurNextThumb = Boolean(nextThumbUrl) && Boolean(state.nextEpisodeThumbnailBlurred);
   nextEpisodeHeader.textContent = state.nextEpisodeHeaderLabel || "Next episode";
   nextEpisodeTitle.textContent = state.nextEpisodeTitle || "";
   nextEpisodeStatus.textContent = state.nextEpisodeStatus || "";
@@ -2089,6 +2621,7 @@ const renderNativePlaybackPrompts = () => {
   nextEpisodeCard.classList.toggle("visible", showNextEpisode);
   nextEpisodeCard.classList.toggle("playable", Boolean(state.nextEpisodePlayable));
   nextEpisodeCard.classList.toggle("has-thumb", Boolean(nextThumbUrl));
+  nextEpisodeCard.classList.toggle("blur-thumb", blurNextThumb);
 };
 
 const isOpeningOverlayActive = () =>
@@ -2230,27 +2763,31 @@ const finishChromePointerInteraction = event => {
 const renderChrome = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
+  const bufferedPositionMs = Math.max(0, Number(state.bufferedPositionMs) || 0);
   const isPlaying = Boolean(state.isPlaying);
   const showError = renderPlaybackError();
   root.classList.toggle("pip-mode", Boolean(state.isInPip));
   if (!state.isInPip && isPipLocked) setPipLocked(false);
   root.classList.toggle("chrome-hidden", Boolean(showError || !state.controlsVisible));
+  root.classList.toggle("modal-open", Boolean(activeModal));
+  root.classList.toggle("info-open", activeModal === "streamInfo");
   root.classList.toggle("source-visible", Boolean(!showError && !isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));
   syncHiddenCursor();
   const showOpening = renderOpeningOverlay(showError);
-  renderPauseMetadataOverlay(showOpening || showError);
+  if (state.pauseOverlayEnabled || showError) renderPauseMetadataOverlay(showOpening || showError);
   syncParentalGuide(showOpening || showError);
 
-  title.textContent = state.title || "";
+  setTextContent(title, state.title || "");
   setText(episode, state.episodeText);
   setText(streamTitle, state.streamTitle);
   setText(providerName, state.providerName);
-  resizeLabel.textContent = state.resizeModeLabel || "Fit";
-  speedLabel.textContent = state.playbackSpeedLabel || "1x";
-  subtitlesLabel.textContent = state.subtitlesLabel || "Subs";
-  audioLabel.textContent = state.audioLabel || "Audio";
-  sourcesLabel.textContent = state.sourcesLabel || "Sources";
-  episodesLabel.textContent = state.episodesLabel || "Episodes";
+  renderPlayerBadges();
+  setTextContent(resizeLabel, state.resizeModeLabel || "Fit");
+  setTextContent(speedLabel, state.playbackSpeedLabel || "1x");
+  setTextContent(subtitlesLabel, state.subtitlesLabel || "Subs");
+  setTextContent(audioLabel, state.audioLabel || "Audio");
+  setTextContent(sourcesLabel, state.sourcesLabel || "Sources");
+  setTextContent(episodesLabel, state.episodesLabel || "Episodes");
   setActionButtonLabel("resize", state.resizeModeLabel || "Fit");
   setActionButtonLabel("speed", state.playbackSpeedLabel || "1x");
   setActionButtonLabel("subtitles", state.subtitlesLabel || "Subs");
@@ -2259,58 +2796,68 @@ const renderChrome = () => {
   setActionButtonLabel("episodes", state.episodesLabel || "Episodes");
   if (pipButton) {
     const pipLabel = String(state.pipLabel || "").trim();
-    pipButton.setAttribute("aria-label", pipLabel);
-    pipButton.setAttribute("title", pipLabel);
+    setAttr(pipButton, "aria-label", pipLabel);
+    setAttr(pipButton, "title", pipLabel);
     pipButton.hidden = !pipLabel;
   }
   syncPipLockLabels();
   const showBuffering = Boolean(!showError && state.isLoading && !activeModal && !showOpening);
   bufferingStatus.classList.toggle("visible", showBuffering);
-  bufferingStatus.setAttribute("aria-hidden", showBuffering ? "false" : "true");
+  setAttr(bufferingStatus, "aria-hidden", showBuffering ? "false" : "true");
+  bufferingLoadingIndicator.setActive(showBuffering);
 
   setVisible(submitIntroButton, Boolean(state.showSubmitIntro));
   setVisible(videoSettingsButton, Boolean(state.showVideoSettings));
   setVisible(sourcesButton, Boolean(state.showSources));
   setVisible(episodesButton, Boolean(state.showEpisodes));
+  const hasChapters = Array.isArray(state.chapters) && state.chapters.length > 0;
+  setVisible(chaptersButton, hasChapters);
+  setTextContent(chaptersLabel, state.chaptersLabel || "Chapters");
+  setActionButtonLabel("chapters", state.chaptersLabel || "Chapters");
+  setTextContent(streamInfoLabel, state.streamInfoLabel || "Stream info");
+  setActionButtonLabel("streamInfo", state.streamInfoLabel || "Stream info");
+  renderChapterMarks();
+  if (!hasChapters && activeModal === "chapters") closePlayerModal(false);
   syncActionFocusState();
 
   const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
   if (toggle) {
-    toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
+    setAttr(toggle, "aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
   }
   if (toggleIcon) {
-    toggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
+    setAttr(toggleIcon, "href", isPlaying ? "#icon-pause" : "#icon-play");
   }
   if (toggleLabel) {
-    toggleLabel.textContent = playPauseLabel || (isPlaying ? "Pause" : "Play");
+    setTextContent(toggleLabel, playPauseLabel || (isPlaying ? "Pause" : "Play"));
   }
   if (nextEpisodeButton) {
     nextEpisodeButton.hidden = !state.nextEpisodePlayable;
     const nextLabel = state.nextEpisodeHeaderLabel || "Next episode";
-    nextEpisodeButton.setAttribute("aria-label", nextLabel);
-    nextEpisodeButton.setAttribute("title", nextLabel);
+    setAttr(nextEpisodeButton, "aria-label", nextLabel);
+    setAttr(nextEpisodeButton, "title", nextLabel);
     if (nextEpisodeButtonLabel) nextEpisodeButtonLabel.textContent = nextLabel;
   }
   syncFullscreenButtons();
-  backButton.setAttribute("aria-label", state.closeLabel || "Close player");
-  submitIntroButton.setAttribute("aria-label", state.submitIntroLabel || "Submit Intro");
-  videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
-  setProgress(positionMs, durationMs);
+  setAttr(backButton, "aria-label", state.closeLabel || "Close player");
+  setAttr(submitIntroButton, "aria-label", state.submitIntroLabel || "Submit Intro");
+  setAttr(videoSettingsButton, "aria-label", state.videoSettingsLabel || "Video settings");
+  setProgress(positionMs, durationMs, bufferedPositionMs);
   if (showError) {
     skipPrompt.classList.remove("visible", "show-progress");
-    skipPrompt.setAttribute("aria-hidden", "true");
+    setAttr(skipPrompt, "aria-hidden", "true");
     nextEpisodeCard.classList.remove("visible");
-    nextEpisodeCard.setAttribute("aria-hidden", "true");
+    setAttr(nextEpisodeCard, "aria-hidden", "true");
   } else {
     renderNativePlaybackPrompts();
   }
+  renderPartyChrome();
   syncChromeAutoHideTimer(showOpening);
 };
 
-const render = () => {
+const render = (modalOpened = false) => {
   applyTheme();
   renderChrome();
-  renderActiveModal();
+  renderActiveModal(modalOpened);
 };
 
 const focusShortcutRoot = () => {
@@ -2456,10 +3003,21 @@ const keepChromeVisibleFromKeyboard = () => {
 let fineSeekTimer = 0;
 let fineSeekAccumulatedMs = 0;
 let fineSeekDirection = null;
+let partySeekTimer = 0;
+const partySeekSettleMs = 300;
 
-const fineSeek = isForward => {
+const finishPartySeek = () => {
+  partySeekTimer = 0;
+  isScrubbing = false;
+  state.positionMs = scrubPositionMs;
+  send("scrubFinish", scrubPositionMs);
+  render();
+};
+
+const fineSeek = (isForward, stepMsOverride) => {
   const direction = isForward ? "forward" : "backward";
-  const stepMs = isForward ? 1000 : -1000;
+  const step = Math.max(500, Number(stepMsOverride) || 1000);
+  const stepMs = isForward ? step : -step;
 
   if (fineSeekDirection === direction) {
     fineSeekAccumulatedMs += stepMs;
@@ -2468,18 +3026,28 @@ const fineSeek = isForward => {
     fineSeekAccumulatedMs = stepMs;
   }
 
-  const currentPosMs = Math.max(0, Number(state.positionMs) || 0);
+  const partySeek = Boolean(partySeekTimer || currentParty().synced);
+  const currentPosMs = Math.max(0, Number(partySeekTimer ? scrubPositionMs : state.positionMs) || 0);
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
+  const bufferedPositionMs = Math.max(0, Number(state.bufferedPositionMs) || 0);
   const targetPosMs = Math.max(0, durationMs > 0 ? Math.min(durationMs, currentPosMs + stepMs) : currentPosMs + stepMs);
 
   state.positionMs = targetPosMs;
-  setProgress(targetPosMs, durationMs);
+  setProgress(targetPosMs, durationMs, bufferedPositionMs);
 
   const deltaSec = Math.round(fineSeekAccumulatedMs / 1000);
   const sign = deltaSec > 0 ? "+" : "";
   showPlayerToast(`${sign}${deltaSec}s`);
 
-  send("scrubFinish", targetPosMs);
+  if (partySeek) {
+    isScrubbing = true;
+    scrubPositionMs = targetPosMs;
+    send("scrubChange", targetPosMs);
+    window.clearTimeout(partySeekTimer);
+    partySeekTimer = window.setTimeout(finishPartySeek, partySeekSettleMs);
+  } else {
+    send("scrubFinish", targetPosMs);
+  }
 
   if (fineSeekTimer) {
     window.clearTimeout(fineSeekTimer);
@@ -2617,6 +3185,7 @@ window.addEventListener("blur", () => {
   clearPressedButton();
   syncChromeAutoHideTimer(isOpeningOverlayActive());
   clearSpeedBoostTimers();
+  releaseFilterRowPointerCaptures();
   if (isHoldSpeedActive || isSpaceBoosting || isSpeedBoosting) {
     suppressNextRootClick = true;
     stopSpeedBoost();
@@ -2661,6 +3230,16 @@ document.querySelectorAll("[data-command]").forEach(button => {
       episodeStreamFilterId = "";
       openPlayerModal("episodes");
       send("episodes", 0);
+      return;
+    }
+    if (command === "chapters") {
+      openPlayerModal("chapters");
+      return;
+    }
+    if (command === "streamInfo") {
+      streamInfoSignature = "";
+      send("streamInfo", 0);
+      openPlayerModal("streamInfo");
       return;
     }
     if (command === "submitIntro") {
@@ -2720,19 +3299,6 @@ autoSyncCapture.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleAutoSyncCapture", 0);
 });
-customSubtitleStyleToggle.addEventListener("click", event => {
-  event.stopPropagation();
-  if (pendingCustomSubtitleStyling !== null) return;
-  pendingCustomSubtitleStyling = !(state.customSubtitleStylingEnabled !== false);
-  renderSubtitleStylePanel();
-  send("subtitleCustomStyleToggle", 0);
-  window.clearTimeout(pendingCustomSubtitleStylingTimer);
-  pendingCustomSubtitleStylingTimer = window.setTimeout(() => {
-    pendingCustomSubtitleStyling = null;
-    pendingCustomSubtitleStylingTimer = 0;
-    renderSubtitleStylePanel();
-  }, 1500);
-});
 fontSizeMinus.addEventListener("click", event => {
   event.stopPropagation();
   send("subtitleFontSizeDelta", -2);
@@ -2760,14 +3326,60 @@ bottomOffsetPlus.addEventListener("click", event => {
 textOpacityMinus.addEventListener("click", event => {
   event.stopPropagation();
   const style = state.subtitleStyle || {};
-  const next = Math.max(0, Math.round((parseArgb(style.textColor).alpha / 255) * 100) - 10);
+  const next = Math.max(0, Math.round((parseArgb(style.textColor).alpha / 255) * 100) - 5);
   send("subtitleTextOpacity", next);
 });
 textOpacityPlus.addEventListener("click", event => {
   event.stopPropagation();
   const style = state.subtitleStyle || {};
-  const next = Math.min(100, Math.round((parseArgb(style.textColor).alpha / 255) * 100) + 10);
+  const next = Math.min(100, Math.round((parseArgb(style.textColor).alpha / 255) * 100) + 5);
   send("subtitleTextOpacity", next);
+});
+backgroundOpacityMinus.addEventListener("click", event => {
+  event.stopPropagation();
+  const style = state.subtitleStyle || {};
+  send("subtitleBackgroundOpacity", Math.max(0, Math.round((parseArgb(style.backgroundColor).alpha / 255) * 100) - 5));
+});
+backgroundOpacityPlus.addEventListener("click", event => {
+  event.stopPropagation();
+  const style = state.subtitleStyle || {};
+  send("subtitleBackgroundOpacity", Math.min(100, Math.round((parseArgb(style.backgroundColor).alpha / 255) * 100) + 5));
+});
+subtitleFontRow.addEventListener("click", event => {
+  event.stopPropagation();
+  setFontPickerOpen(true);
+});
+subtitleFontDone.addEventListener("click", event => {
+  event.stopPropagation();
+  setFontPickerOpen(false);
+});
+subtitleFontImport.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleFontImport", 0);
+});
+subtitleFontModal.addEventListener("click", event => {
+  event.stopPropagation();
+  if (event.target === subtitleFontModal) setFontPickerOpen(false);
+});
+shadowToggle.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowToggle", 0);
+});
+shadowOpacityMinus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowOpacityDelta", -5);
+});
+shadowOpacityPlus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowOpacityDelta", 5);
+});
+shadowSizeMinus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowSizeDelta", -1);
+});
+shadowSizePlus.addEventListener("click", event => {
+  event.stopPropagation();
+  send("subtitleShadowSizeDelta", 1);
 });
 subtitleStyleReset.addEventListener("click", event => {
   event.stopPropagation();
@@ -2787,6 +3399,11 @@ sourceList.addEventListener("scroll", () => {
     requestSourceVirtualRender();
   }
 }, { passive: true });
+chaptersCloseButton.addEventListener("click", event => {
+  event.stopPropagation();
+  closePlayerModal();
+});
+
 episodesCloseButton.addEventListener("click", event => {
   event.stopPropagation();
   closePlayerModal();
@@ -2798,10 +3415,12 @@ episodeStreamsCloseButton.addEventListener("click", event => {
 episodeBackButton.addEventListener("click", event => {
   event.stopPropagation();
   episodeStreamFilterId = "";
+  currentEpisodeStreamItems = [];
   send("backToEpisodes", 0);
 });
 episodeReloadButton.addEventListener("click", event => {
   event.stopPropagation();
+  currentEpisodeStreamItems = [];
   send("reloadEpisodeStreams", 0);
 });
 
@@ -2919,7 +3538,7 @@ seek.addEventListener("input", () => {
   noteChromeActivity();
   isScrubbing = true;
   scrubPositionMs = rangePositionMs();
-  setProgress(scrubPositionMs, state.durationMs);
+  setProgress(scrubPositionMs, state.durationMs, state.bufferedPositionMs);
   send("scrubChange", scrubPositionMs);
 });
 
@@ -2947,6 +3566,13 @@ volumeSlider.addEventListener("input", event => {
 });
 
 let preMuteVolumeLevel = 1.0;
+let subtitlesHidden = false;
+
+function showHiddenSubtitles() {
+  if (!subtitlesHidden) return;
+  subtitlesHidden = false;
+  send("subtitleVisibility", 1);
+}
 
 volumeButton.addEventListener("click", () => {
   noteChromeActivity();
@@ -2960,9 +3586,16 @@ volumeButton.addEventListener("click", () => {
   send("volumeChangeTemporary", state.volumeLevel);
 });
 
+timeLabel.addEventListener("click", () => {
+  noteChromeActivity();
+  timeLabelShowRemaining = !timeLabelShowRemaining;
+  renderChrome();
+});
+
 window.playerUpdate = update => {
   const durationMs = Math.round((Number(update.duration) || 0) * 1000);
   const positionMs = Math.round((Number(update.position) || 0) * 1000);
+  const bufferedPositionMs = Math.round((Number(update.bufferedPosition) || 0) * 1000);
   const reportedVolumeLevel = Number(update.volumeLevel);
   const volumeLevel = Number.isFinite(reportedVolumeLevel)
     ? clampVolumeLevel(reportedVolumeLevel)
@@ -2978,16 +3611,31 @@ window.playerUpdate = update => {
     window.clearTimeout(pendingPlaybackTimer);
     pendingPlaybackTimer = 0;
   }
+  const nextIsPlaying = pendingIsPlaying === null ? nativeIsPlaying : pendingIsPlaying;
+  const nextIsLoading = Boolean(update.loading || update.isLoading);
+  const unchanged = state.durationMs === durationMs &&
+    Math.floor(state.positionMs / 1000) === Math.floor(positionMs / 1000) &&
+    Math.floor(state.bufferedPositionMs / 1000) === Math.floor(bufferedPositionMs / 1000) &&
+    state.isPlaying === nextIsPlaying &&
+    state.isLoading === nextIsLoading &&
+    state.volumeLevel === volumeLevel &&
+    !audioTracksChanged &&
+    !subtitleTracksChanged;
   state = {
     ...state,
     durationMs,
     positionMs,
-    isPlaying: pendingIsPlaying === null ? nativeIsPlaying : pendingIsPlaying,
-    isLoading: Boolean(update.loading || update.isLoading),
+    bufferedPositionMs,
+    isPlaying: nextIsPlaying,
+    isLoading: nextIsLoading,
     volumeLevel,
     audioTracks,
     subtitleTracks,
   };
+  if (!appliedRememberedVolume) {
+    appliedRememberedVolume = true;
+    syncVolumeControl();
+  }
   if (typeof volumeLevel === "number" && volumeLevel > 0) {
     preMuteVolumeLevel = volumeLevel;
   }
@@ -2998,9 +3646,11 @@ window.playerUpdate = update => {
       pendingSubtitleOptionId = selected.id;
     }
   }
+  if (unchanged) return;
   renderChrome();
   if ((audioTracksChanged && activeModal === "audio") ||
-      (subtitleTracksChanged && activeModal === "subtitles")) {
+      (subtitleTracksChanged && activeModal === "subtitles") ||
+      (nativeIsPlaying && activeModal === "chapters")) {
     renderActiveModal();
   }
 };
@@ -3014,6 +3664,8 @@ window.playerControls = nextState => {
   const previousEpisodeStreamsVisible = Boolean(state.episodeStreamsVisible);
   const previousSelectedSubtitleLanguageKey = state.selectedSubtitleLanguageKey || "__off__";
   const previousSelectedSubtitleOptionId = state.selectedSubtitleOptionId || "";
+  const previousParty = state.party;
+  const replayingParty = !hasReceivedPlayerControls;
   const currentPlaybackState = pendingIsPlaying === null
     ? state.isPlaying
     : pendingIsPlaying;
@@ -3043,6 +3695,7 @@ window.playerControls = nextState => {
   if (notificationToken !== previousNotificationToken) {
     showPlayerToast(state.notificationMessage);
   }
+  if (!replayingParty) applyPartyControls(previousParty);
   if (state.showP2pConsent && activeModal !== "p2pConsent") {
     openPlayerModal("p2pConsent");
   } else if (!state.showP2pConsent && activeModal === "p2pConsent") {
@@ -3057,7 +3710,8 @@ window.playerControls = nextState => {
   ) {
     resetSubtitleSelectionState();
   }
-  render();
+  const preventModalAutoScrolling = activeModal === "sources" || activeModal === "episodes";
+  render(preventModalAutoScrolling);
   if (pendingSettingToastCommand === "resize" && (state.resizeModeLabel || "") !== previousResizeLabel) {
     pendingSettingToastCommand = "";
     showPlayerToast(settingToastLabel("resize"), { icon: "icon-aspect" });
@@ -3079,24 +3733,11 @@ const isControlsSurfaceEvent = event => {
     return true;
   }
 
-  const titleEl = document.getElementById("title");
   const metaRow = document.querySelector(".meta-row");
-  if (titleEl && metaRow) {
-    const titleRect = titleEl.getBoundingClientRect();
-    const metaRect = metaRow.getBoundingClientRect();
-    const textTop = Math.min(titleRect.top, metaRect.top);
-    const textBottom = Math.max(titleRect.bottom, metaRect.bottom);
-    const textRight = titleRect.left + Math.max(titleEl.scrollWidth, metaRow.scrollWidth) + 16;
+  const mediaInfo = [title, episode, metaRow, playerBadges, chapterTitle];
 
-    if (
-        event.clientX >= titleRect.left &&
-        event.clientX <= textRight &&
-        event.clientY >= textTop &&
-        event.clientY <= textBottom
-    ) {
-      return true;
-    }
-  }
+  const infoClick = mediaInfo.some(info => info.checkVisibility() && info.contains(event.target));
+  if (infoClick) return true;
 
   const header = document.querySelector(".header");
   if (header && event.clientY <= header.getBoundingClientRect().bottom + 10) {
@@ -3111,8 +3752,45 @@ let isSpeedBoosting = false;
 let speedBoostHoldTimer = null;
 let isHoldSpeedActive = false;
 let suppressNextRootClick = false;
+let suppressClickTimer = null;
+
+const setSuppressNextRootClick = () => {
+  suppressNextRootClick = true;
+  if (suppressClickTimer) {
+    window.clearTimeout(suppressClickTimer);
+  }
+  suppressClickTimer = window.setTimeout(() => {
+    suppressNextRootClick = false;
+    suppressClickTimer = null;
+  }, 250);
+};
+
+const clearSuppressNextRootClick = () => {
+  suppressNextRootClick = false;
+  if (suppressClickTimer) {
+    window.clearTimeout(suppressClickTimer);
+    suppressClickTimer = null;
+  }
+};
+
+window.nuvioNativeViewportChanged = () => {
+  root.classList.add("native-resizing");
+};
+
+window.nuvioNativeResizeEnded = () => {
+  pipPointerDown = false;
+  clearSuppressNextRootClick();
+  root.classList.remove("native-resizing");
+  if (document.body.style.cursor && document.body.style.cursor.includes("resize")) {
+    document.body.style.cursor = "";
+  }
+};
+
 let rootPointerStartX = 0;
 let rootPointerStartY = 0;
+let pipPointerStartX = 0;
+let pipPointerStartY = 0;
+let pipPointerDown = false;
 let spaceHoldTimer = null;
 let isSpaceBoosting = false;
 let pausedBeforeSpeedBoosting = false;
@@ -3154,20 +3832,35 @@ const clearSpaceHoldTimerAndStopSpeedBoost = () => {
   return false;
 }
 
+const normalizedSpeedBoost = () => {
+  const speedValue = Number(state.holdToSpeedValue);
+  return Number.isFinite(speedValue) ? Math.max(1.0, Math.min(4.0, speedValue)) : 2.0;
+};
+
+const formatSpeedBoostString = (speedValue) => {
+  return Number.isSafeInteger(speedValue) ? speedValue.toPrecision(1) : speedValue;
+};
+
+const getCurrentPlaybackSpeed = () => {
+  const currentSpeedStr = String(state.playbackSpeedLabel || "1x");
+  return parseFloat(currentSpeedStr.replace("x", "")) || 1.0;
+};
+
+const canSpeedBoostStart = () => {
+  return state.holdToSpeedEnabled && (getCurrentPlaybackSpeed() !== normalizedSpeedBoost());
+};
+
 const startSpeedBoost = () => {
   if (isSpeedBoosting) return;
   isSpeedBoosting = true;
-  if (preSpeedBoostRate == null) {
-    const currentSpeedStr = String(state.playbackSpeedLabel || "1x");
-    const currentSpeedNum = parseFloat(currentSpeedStr.replace("x", "")) || 1.0;
-    preSpeedBoostRate = currentSpeedNum === 2.0 ? 1.0 : currentSpeedNum;
-  }
+  if (preSpeedBoostRate == null) preSpeedBoostRate = getCurrentPlaybackSpeed();
   if (!state.isPlaying) {
     pausedBeforeSpeedBoosting = true;
     requestPlaybackState("setPlaybackStateQuiet", false);
   }
-  showPlayerToast("2x", { icon: "icon-speed", persistent: true });
-  send("setPlaybackSpeed", 2.0);
+  const speedBoostValue = normalizedSpeedBoost();
+  showPlayerToast(`${formatSpeedBoostString(speedBoostValue)}x`, { icon: "icon-speed", persistent: true });
+  send("setPlaybackSpeed", speedBoostValue);
 };
 
 const stopSpeedBoost = () => {
@@ -3191,7 +3884,7 @@ root.addEventListener("contextmenu", event => {
 });
 
 root.addEventListener("pointerdown", event => {
-  if (state.isInPip || playbackErrorText() || isControlsSurfaceEvent(event)) return;
+  if (!canSpeedBoostStart() || state.isInPip || playbackErrorText() || isControlsSurfaceEvent(event)) return;
   if (event.button !== 0) return;
 
   rootPointerStartX = event.clientX;
@@ -3207,29 +3900,89 @@ root.addEventListener("pointerdown", event => {
   }, 220);
 });
 
+const PIP_RESIZE_BORDER = 8;
+
+const getPipEdgeHit = (clientX, clientY) => {
+  if (!state.isInPip || isPipLocked) return null;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  if (w <= 0 || h <= 0) return null;
+  const left = clientX < PIP_RESIZE_BORDER;
+  const right = clientX >= w - PIP_RESIZE_BORDER;
+  const top = clientY < PIP_RESIZE_BORDER;
+  const bottom = clientY >= h - PIP_RESIZE_BORDER;
+
+  if (top && left) return { hit: 13, cursor: "nwse-resize" };
+  if (top && right) return { hit: 14, cursor: "nesw-resize" };
+  if (bottom && left) return { hit: 16, cursor: "nesw-resize" };
+  if (bottom && right) return { hit: 17, cursor: "nwse-resize" };
+  if (left) return { hit: 10, cursor: "ew-resize" };
+  if (right) return { hit: 11, cursor: "ew-resize" };
+  if (top) return { hit: 12, cursor: "ns-resize" };
+  if (bottom) return { hit: 15, cursor: "ns-resize" };
+  return null;
+};
+
 window.addEventListener("pointermove", event => {
   if (speedBoostHoldTimer && !isHoldSpeedActive) {
     const dx = Math.abs(event.clientX - rootPointerStartX);
     const dy = Math.abs(event.clientY - rootPointerStartY);
     if (dx > 12 || dy > 12) clearSpeedBoostHoldTimer();
   }
+  if (state.isInPip && !isPipLocked) {
+    if (event.target && event.target.closest && event.target.closest("button, input, select, textarea, [data-command], a, #seek, .volume-control, .pip-lock-badge, .modal")) {
+      if (document.body.style.cursor && document.body.style.cursor.includes("resize")) {
+        document.body.style.cursor = "";
+      }
+    } else {
+      const edge = getPipEdgeHit(event.clientX, event.clientY);
+      if (edge) {
+        document.body.style.cursor = edge.cursor;
+      } else if (document.body.style.cursor && document.body.style.cursor.includes("resize")) {
+        document.body.style.cursor = "";
+      }
+    }
+  }
+  if (pipPointerDown && state.isInPip) {
+    const dx = Math.abs(event.clientX - pipPointerStartX);
+    const dy = Math.abs(event.clientY - pipPointerStartY);
+    if (dx > 6 || dy > 6) {
+      pipPointerDown = false;
+      setSuppressNextRootClick();
+      if (event.target && event.target.releasePointerCapture) {
+        try { event.target.releasePointerCapture(event.pointerId); } catch (_) {}
+      }
+      send("dragWindow", 0);
+    }
+  }
 });
 
 window.addEventListener("pointerup", () => {
+  pipPointerDown = false;
   clearSpeedBoostHoldTimer();
   preventClickAndStopSpeedBoost();
 });
 
 window.addEventListener("pointercancel", () => {
+  pipPointerDown = false;
+  clearSuppressNextRootClick();
   clearSpeedBoostHoldTimer();
   preventClickAndStopSpeedBoost();
+});
+
+window.addEventListener("blur", () => {
+  pipPointerDown = false;
+  clearSuppressNextRootClick();
+  if (document.body.style.cursor && document.body.style.cursor.includes("resize")) {
+    document.body.style.cursor = "";
+  }
 });
 
 root.addEventListener("click", event => {
   if (event.button !== 0) return;
   if (isPipLocked) return;
   if (suppressNextRootClick) {
-    suppressNextRootClick = false;
+    clearSuppressNextRootClick();
     window.clearTimeout(tapTimer);
     event.stopPropagation();
     event.preventDefault();
@@ -3244,12 +3997,29 @@ root.addEventListener("click", event => {
 
 root.addEventListener("pointerdown", event => {
   if (!state.isInPip || event.button !== 0) return;
-  if (event.target.closest("button, input, select, textarea, [data-command], a, #seek, .volume-control, .pip-lock-badge")) return;
-  event.preventDefault();
-  if (event.target && event.target.releasePointerCapture) {
-    try { event.target.releasePointerCapture(event.pointerId); } catch (_) {}
+  if (activeModal) return;
+
+  if (event.target.closest("button, input, select, textarea, [data-command], a, #seek, .volume-control, .pip-lock-badge, .modal")) return;
+
+  if (!isPipLocked) {
+    const edge = getPipEdgeHit(event.clientX, event.clientY);
+    if (edge) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSuppressNextRootClick();
+      pipPointerDown = false;
+      root.classList.add("native-resizing");
+      if (event.target && event.target.releasePointerCapture) {
+        try { event.target.releasePointerCapture(event.pointerId); } catch (_) {}
+      }
+      send("resizeWindow", edge.hit);
+      return;
+    }
   }
-  send("dragWindow", 0);
+
+  pipPointerStartX = event.clientX;
+  pipPointerStartY = event.clientY;
+  pipPointerDown = true;
 });
 
 if (pipLockButton) {
@@ -3282,20 +4052,17 @@ root.addEventListener("dblclick", event => {
 root.addEventListener("wheel", event => {
   if (playbackErrorText() || activeModal) return;
   const isProgressTarget = Boolean(event.target.closest("#seek, .time-row, .time-pill, .scrub"));
-  if (isProgressTarget || event.shiftKey) {
-    event.preventDefault();
-    noteChromeActivity();
-    const delta = event.deltaY !== 0 ? Math.sign(event.deltaY) * -1 : Math.sign(event.deltaX);
-    if (delta !== 0) {
-      fineSeek(delta > 0);
-    }
+  // Seeking is the primary wheel action. Ctrl/Alt/Meta + wheel keeps volume control available.
+  const isVolumeWheel = !isProgressTarget && (event.ctrlKey || event.altKey || event.metaKey);
+  const delta = event.deltaY !== 0 ? Math.sign(event.deltaY) * -1 : Math.sign(event.deltaX);
+  if (delta === 0) return;
+  event.preventDefault();
+  noteChromeActivity();
+  if (isVolumeWheel) {
+    sendKeyboardVolume(delta);
     return;
   }
-  event.preventDefault();
-  const delta = Math.sign(event.deltaY) * -1;
-  if (delta !== 0) {
-    sendKeyboardVolume(delta);
-  }
+  fineSeek(delta > 0, 5000);
 }, { passive: false });
 
 document.addEventListener("keyup", event => {
@@ -3315,6 +4082,11 @@ document.addEventListener("keyup", event => {
 });
 
 document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && isPartyConfirmOpen()) {
+    event.preventDefault();
+    closePartyConfirm();
+    return;
+  }
   if (event.key === "Escape" && activeModal) {
     clearSpaceHoldTimerAndStopSpeedBoost();
     event.preventDefault();
@@ -3328,7 +4100,7 @@ document.addEventListener("keydown", event => {
     if (state.isInPip) {
       send("pictureInPicture", 0);
     } else if (state.isFullscreen) {
-      togglePlayerFullscreen();
+      togglePlayerFullscreen(true);
     } else {
       send("back", 0);
     }
@@ -3432,7 +4204,7 @@ document.addEventListener("keydown", event => {
   }
 
   if (activeModal && event.code.startsWith("Arrow") && document.activeElement && document.activeElement.tagName !== "BODY" && document.activeElement !== root) {
-    const modalEl = modalByName[activeModal];
+    const modalEl = isPartyConfirmOpen() ? partyConfirm : modalByName[activeModal];
     if (!modalEl) return;
     const focusable = Array.from(modalEl.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])'))
       .filter(el => el.offsetWidth > 0 || el.offsetHeight > 0);
@@ -3526,7 +4298,9 @@ document.addEventListener("keydown", event => {
   if (event.code === "KeyV") {
     event.preventDefault();
     const isOff = !normalizeTracks(state.subtitleTracks).some(t => t.selected);
-    if (isOff) {
+    if (subtitlesHidden && !isOff) {
+      showHiddenSubtitles();
+    } else if (isOff) {
       if (window.lastActiveSubtitle) {
         if (window.lastActiveSubtitle.kind === "builtIn") send("selectBuiltInSubtitleTrack", window.lastActiveSubtitle.index);
         else send("selectAddonSubtitle", window.lastActiveSubtitle.index);
@@ -3540,14 +4314,8 @@ document.addEventListener("keydown", event => {
         }
       }
     } else {
-      const activeOption = selectedSubtitleOption(subtitleSelectionOptions());
-      if (activeOption) {
-        window.lastActiveSubtitle = activeOption;
-      } else {
-        const activeTrack = normalizeTracks(state.subtitleTracks).find(t => t.selected);
-        if (activeTrack) window.lastActiveSubtitle = { kind: "builtIn", index: activeTrack.index };
-      }
-      send("selectBuiltInSubtitleTrack", -1);
+      subtitlesHidden = true;
+      send("subtitleVisibility", 0);
     }
     return;
   }
@@ -3634,7 +4402,7 @@ document.addEventListener("keydown", event => {
     return;
   }
 
-  if (event.code === "Space") {
+  if (canSpeedBoostStart() && event.code === "Space") {
     event.preventDefault();
     if (event.repeat) {
       if (!isSpeedBoosting) {
@@ -3682,7 +4450,66 @@ document.addEventListener("keydown", event => {
   send(command, 0);
 });
 
-setProgress(0, 0);
+const overlayDirtyBridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.overlayDirty;
+if (overlayDirtyBridge) {
+  let overlayDirtyQueued = false;
+  const markOverlayDirty = () => {
+    if (overlayDirtyQueued) return;
+    overlayDirtyQueued = true;
+    window.setTimeout(() => {
+      overlayDirtyQueued = false;
+      overlayDirtyBridge.postMessage(0);
+    }, 0);
+  };
+  const isOverlayMutationVisible = record => {
+    if (record.type === "attributes" &&
+        record.oldValue === record.target.getAttribute(record.attributeName)) {
+      return false;
+    }
+    if (record.type === "childList" &&
+        record.addedNodes.length === 1 &&
+        record.removedNodes.length === 1 &&
+        record.addedNodes[0].nodeType === Node.TEXT_NODE &&
+        record.removedNodes[0].nodeType === Node.TEXT_NODE &&
+        record.addedNodes[0].data === record.removedNodes[0].data) {
+      return false;
+    }
+    const node = record.type === "childList" ? record.target : record.target.parentElement;
+    if (!node || typeof node.checkVisibility !== "function") return true;
+    return node.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+  };
+  new MutationObserver(records => {
+    if (records.some(isOverlayMutationVisible)) markOverlayDirty();
+  }).observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeOldValue: true,
+    characterData: true,
+  });
+  [
+    "transitionrun",
+    "transitionend",
+    "transitioncancel",
+    "animationstart",
+    "animationiteration",
+    "animationend",
+    "animationcancel",
+    "load",
+    "error",
+    "scroll",
+    "input",
+    "focusin",
+    "focusout",
+    "pointerover",
+    "pointerout",
+    "pointerdown",
+    "pointerup",
+  ].forEach(type => document.addEventListener(type, markOverlayDirty, true));
+  if (document.fonts) document.fonts.addEventListener("loadingdone", markOverlayDirty);
+}
+
+setProgress(0, 0, 0);
 focusShortcutRoot();
 render();
 send("controlsReady", 0);

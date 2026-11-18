@@ -63,9 +63,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.isDesktop
+import com.nuvio.app.core.ui.NuvioDesktopAnimation
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioToastHost
+import com.nuvio.app.core.ui.LocalVerticalBarPadding
+import com.nuvio.app.core.ui.nuvioFocusBorder
 import com.nuvio.app.features.membership.CosmeticEntitlement
 import com.nuvio.app.features.settings.MemberBrandWordmark
 import kotlinx.coroutines.delay
@@ -329,6 +332,7 @@ fun ProfileSelectionScreen(
                 onClick = onBack,
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .padding(LocalVerticalBarPadding.current)
                     .padding(start = 16.dp, top = statusBarTop + 8.dp),
             )
         }
@@ -402,6 +406,7 @@ private fun ProfileAvatarCard(
         }
     }
 
+    val profileShape = RoundedCornerShape(20.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -412,7 +417,7 @@ private fun ProfileAvatarCard(
                 scaleY = animScale.value * pressScale
                 translationY = animOffset.value
             }
-            .clip(RoundedCornerShape(20.dp))
+            .clip(profileShape)
             .then(
                 if (isDesktop) {
                     Modifier.hoverable(interactionSource)
@@ -420,6 +425,7 @@ private fun ProfileAvatarCard(
                     Modifier
                 },
             )
+            .nuvioFocusBorder(profileShape)
             .clickable(
                 enabled = enabled,
                 interactionSource = interactionSource,
@@ -465,6 +471,7 @@ private fun ProfileAvatarCard(
                         contentDescription = avatarItem?.displayName ?: profile.name,
                         modifier = Modifier.size(100.dp).clip(CircleShape),
                         contentScale = ContentScale.Crop,
+                        desktopAnimation = NuvioDesktopAnimation.Always,
                     )
                 } else if (profile.name.isNotBlank()) {
                     Text(
@@ -559,6 +566,7 @@ private fun AddProfileCard(
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale = if (isPressed) 0.95f else 1f
 
+    val addProfileShape = RoundedCornerShape(20.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -569,7 +577,8 @@ private fun AddProfileCard(
                 scaleY = animScale.value * pressScale
                 translationY = animOffset.value
             }
-            .clip(RoundedCornerShape(20.dp))
+            .clip(addProfileShape)
+            .nuvioFocusBorder(addProfileShape)
             .clickable(
                 enabled = enabled,
                 interactionSource = interactionSource,

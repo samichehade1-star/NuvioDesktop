@@ -50,6 +50,7 @@ namespace {
 
 JavaVM *gVm = nullptr;
 constexpr double kMaxVolumePercent = 200.0;
+constexpr int kDirtyReportedSnapSkipTicks = 90;
 
 struct Player {
     mpv_handle *mpv = nullptr;
@@ -92,6 +93,10 @@ struct Player {
     GCancellable *snapCancel = nullptr;  // cancels the in-flight snapshot, owned
     int snapCooldownTicks = 0;  // watchdog backoff before the next request
     int snapResets = 0;         // consecutive watchdog resets without a snapshot
+    int snapStill = 0;          // consecutive snapshots identical to the last pushed one
+    int snapSkip = 0;           // composite ticks left before the next request while still
+    bool overlayDirtyReported = false;
+    std::string lastUpdateJs;
     // Controls-state payload buffering (macOS/Windows parity): the first
     // updateControls arrives before the page defines window.playerControls, so a
     // fire-and-forget eval loses it and the loading screen shows a bare spinner
@@ -361,7 +366,14 @@ void onControlsEval(GObject *src, GAsyncResult *res, gpointer data) {
 // Deliver the pending controls payload, probing for window.playerControls so a
 // too-early push is detected and retried instead of silently short-circuited.
 // GTK thread only.
+void wakeSnapshots(Player *player) {
+    player->snapStill = 0;
+    player->snapSkip = 0;
+}
+
 void flushControlsJson(Player *player) {
+    wakeSnapshots(player);
+    player->lastUpdateJs.clear();
     if (!player->webview || player->pendingControlsJson.empty()) return;
     std::string script =
         "(function(){if(!window.playerControls)return 'missing';"
@@ -450,6 +462,8 @@ void onPlayerMessage(WebKitUserContentManager *, WebKitJavascriptResult *js, gpo
     // chrome faded out; every other event (cursor/keep-visible/toggle/...) means
     // it is up. cursorActivity also arrives while hidden (mouse woke the UI) and
     // must re-activate compositing so the fade-in is actually shown.
+    if (type) wakeSnapshots(player);
+    if (type) player->lastUpdateJs.clear();
     if (type) {
         if (strcmp(type, "setPlaybackState") == 0 ||
             strcmp(type, "setPlaybackStateQuiet") == 0) {
@@ -494,6 +508,13 @@ void onPlayerMessage(WebKitUserContentManager *, WebKitJavascriptResult *js, gpo
     if (valV) g_object_unref(valV);
 }
 
+void onOverlayDirty(WebKitUserContentManager *, WebKitJavascriptResult *, gpointer data) {
+    auto *player = static_cast<Player *>(data);
+    if (!playerAlive(player)) return;
+    player->overlayDirtyReported = true;
+    wakeSnapshots(player);
+}
+
 // The overlay toplevel is a child of the AWT canvas at the X level, and player
 // close races Compose's canvas teardown against dispose(): when AWT destroys
 // the canvas first, X cascade-destroys the overlay's window, GDK reports it
@@ -525,6 +546,8 @@ struct SnapCtx {
     int gen;
 };
 
+void presentOverlaySurface(Player *player, cairo_surface_t *surf);
+
 // Completion of the async controls snapshot: hand the premultiplied BGRA pixels
 // to mpv as an OSD overlay. Runs on the GTK thread like the tick that issued it.
 void onOverlaySnapshot(GObject *src, GAsyncResult *res, gpointer data) {
@@ -552,6 +575,10 @@ void onOverlaySnapshot(GObject *src, GAsyncResult *res, gpointer data) {
     player->snapInFlight = false;
     player->snapResets = 0;
     if (!surf) return;
+    presentOverlaySurface(player, surf);
+}
+
+void presentOverlaySurface(Player *player, cairo_surface_t *surf) {
     if (cairo_image_surface_get_format(surf) != CAIRO_FORMAT_ARGB32 ||
         cairo_image_surface_get_width(surf) <= 0 ||
         cairo_image_surface_get_height(surf) <= 0 || !player->mpv) {
@@ -574,6 +601,25 @@ void onOverlaySnapshot(GObject *src, GAsyncResult *res, gpointer data) {
         }
     }
     cairo_surface_flush(surf);
+    cairo_surface_t *cur = player->snapSurf;
+    if (cur && player->overlayPushed &&
+        cairo_image_surface_get_width(cur) == cairo_image_surface_get_width(surf) &&
+        cairo_image_surface_get_height(cur) == cairo_image_surface_get_height(surf) &&
+        cairo_image_surface_get_stride(cur) == cairo_image_surface_get_stride(surf) &&
+        memcmp(cairo_image_surface_get_data(cur), cairo_image_surface_get_data(surf),
+               (size_t)cairo_image_surface_get_stride(surf) *
+                   cairo_image_surface_get_height(surf)) == 0) {
+        cairo_surface_destroy(surf);
+        if (player->snapStill < 1000) player->snapStill++;
+        if (player->snapStill >= 3) {
+            player->snapSkip = player->overlayDirtyReported
+                                   ? std::min(player->snapStill * 8, kDirtyReportedSnapSkipTicks)
+                                   : std::min(player->snapStill * 2, 15);
+        }
+        return;
+    }
+    player->snapStill = 0;
+    player->snapSkip = 0;
     char addr[32], sw[16], sh[16], sstride[16];
     snprintf(addr, sizeof addr, "&%zu",
              (size_t)(uintptr_t)cairo_image_surface_get_data(surf));
@@ -663,6 +709,7 @@ void compositeOverlay(Player *player) {
                 player->overlayPushed = false;
                 releaseSnapshots(player);
             }
+            wakeSnapshots(player);
         }
     }
     if (!active) {
@@ -679,6 +726,8 @@ void compositeOverlay(Player *player) {
             // Backing off after a watchdog reset: a stalled web process gets no
             // relief from being asked again immediately.
             player->snapCooldownTicks--;
+        } else if (player->snapSkip > 0) {
+            player->snapSkip--;
         } else {
             player->snapInFlight = true;
             player->snapWaitTicks = 0;
@@ -867,6 +916,8 @@ gboolean pushPlayerUpdate(gpointer data) {
     }
     double duration = mpvGetDouble(player->mpv, "duration");
     double position = mpvGetDouble(player->mpv, "time-pos");
+    double cache = mpvGetDouble(player->mpv, "demuxer-cache-time");
+    double bufferedPosition = std::max((cache > position ? cache : position), 0.0);
     double volumeLevel = mpvGetDouble(player->mpv, "volume") / 100.0;
     volumeLevel = std::max(0.0, std::min(kMaxVolumePercent / 100.0, volumeLevel));
     bool paused = mpvGetFlag(player->mpv, "pause");
@@ -875,10 +926,12 @@ gboolean pushPlayerUpdate(gpointer data) {
     std::string subtitleTracks = buildTracksJson(player->mpv, "sub");
     char head[224];
     snprintf(head, sizeof(head),
-             "window.playerUpdate&&window.playerUpdate({duration:%0.3f,position:%0.3f,volumeLevel:%0.3f,paused:%s,loading:%s,audioTracks:",
-             duration, position, volumeLevel, paused ? "true" : "false", loading ? "true" : "false");
+             "window.playerUpdate&&window.playerUpdate({duration:%0.3f,position:%0.3f,bufferedPosition:%0.3f,volumeLevel:%0.3f,paused:%s,loading:%s,audioTracks:",
+             duration, position, bufferedPosition, volumeLevel, paused ? "true" : "false", loading ? "true" : "false");
     std::string js = std::string(head) + audioTracks +
                      ",subtitleTracks:" + subtitleTracks + "})";
+    if (js == player->lastUpdateJs) return G_SOURCE_CONTINUE;
+    player->lastUpdateJs = js;
     evalJs(player->webview, js);
     return G_SOURCE_CONTINUE;
 }
@@ -997,6 +1050,8 @@ gboolean createWebviewOnGtk(gpointer data) {
         wv = gWarmupView;
         g_signal_connect(gWarmupUcm, "script-message-received::player",
                          G_CALLBACK(onPlayerMessage), player);
+        g_signal_connect(gWarmupUcm, "script-message-received::overlayDirty",
+                         G_CALLBACK(onOverlayDirty), player);
         gWarmupWindow = nullptr;
         gWarmupView = nullptr;
         gWarmupUcm = nullptr;
@@ -1012,8 +1067,11 @@ gboolean createWebviewOnGtk(gpointer data) {
 
         WebKitUserContentManager *ucm = webkit_user_content_manager_new();
         webkit_user_content_manager_register_script_message_handler(ucm, "player");
+        webkit_user_content_manager_register_script_message_handler(ucm, "overlayDirty");
         g_signal_connect(ucm, "script-message-received::player",
                          G_CALLBACK(onPlayerMessage), player);
+        g_signal_connect(ucm, "script-message-received::overlayDirty",
+                         G_CALLBACK(onOverlayDirty), player);
 
         // WebKit's DMABUF renderer yields controls snapshots with degraded alpha —
         // the semi-transparent chrome scrim reads back near-opaque (NVIDIA: stale or
@@ -1134,6 +1192,20 @@ gboolean createWebviewOnGtk(gpointer data) {
     GdkWindow *gdkWin = gtk_widget_get_window(win);
     Display *dpy = GDK_WINDOW_XDISPLAY(gdkWin);
     Window gtkXid = GDK_WINDOW_XID(gdkWin);
+
+    // Opt the overlay out of X frame sync before its first frame. GDK still
+    // treats it as a toplevel (the foreign host parent keeps that type), so on
+    // a compositor advertising _NET_WM_FRAME_DRAWN (mutter) it freezes the
+    // frame clock after every frame until the WM acks it — and the WM never
+    // manages this embedded window, so the first frame is the last. Since
+    // WebKitGTK 2.54 page rendering is paced by that clock: CSS transitions
+    // freeze mid-flight (the loading screen's fade-out stuck over the chrome,
+    // track panels never opening), rAF stops, and pointermove is never
+    // dispatched, so moving the mouse neither reveals the chrome nor the
+    // cursor. This is the case gdk_x11_window_set_frame_sync_enabled exists
+    // for (windows not directly managed by the WM). Must precede the first
+    // paint: it does not thaw an already-frozen clock.
+    gdk_x11_window_set_frame_sync_enabled(gdkWin, FALSE);
 
     // size to the host window (X device pixels -> GDK logical pixels, so the
     // overlay comes up at the host's size on a HiDPI output instead of
@@ -1402,6 +1474,7 @@ gboolean warmupOnGtk(gpointer data) {
 
     WebKitUserContentManager *ucm = webkit_user_content_manager_new();
     webkit_user_content_manager_register_script_message_handler(ucm, "player");
+    webkit_user_content_manager_register_script_message_handler(ucm, "overlayDirty");
     // controlsReady = page scripts executed end to end (same readiness signal
     // the Windows warm-up waits for). One-shot latched; harmless after
     // adoption when the player's own handler is connected alongside.
@@ -1528,7 +1601,7 @@ JNIEXPORT jlong JNICALL NP(create)(
     JNIEnv *env, jobject /*thiz*/, jlong hostViewPtr, jstring sourceUrl,
     jobjectArray headerLines, jboolean playWhenReady, jlong initialPositionMs,
     jstring controlsPageUrl, jint decoderPriority,
-    jboolean /*nvidiaRtxSuperResolutionEnabled*/, jobject eventSink) {
+    jboolean /*nvidiaRtxSuperResolutionEnabled*/, jboolean /*nvidiaRtxHdrEnabled*/, jobject eventSink) {
 
     // libmpv requires LC_NUMERIC=C (e.g. non-"C" locales with comma
     // decimals make mpv_create fail); the JVM uses java.util.Locale, so
@@ -1758,11 +1831,13 @@ JNIEXPORT void JNICALL NP(seekTo)(JNIEnv *, jobject, jlong handle, jlong positio
     p->ended.store(false);
 }
 
+// Exact: mpv keeps relative seeks on keyframes by default, which can overshoot by
+// up to one GOP (often ~10 s).
 JNIEXPORT void JNICALL NP(seekBy)(JNIEnv *, jobject, jlong handle, jlong offsetMs) {
     Player *p = asPlayer(handle);
     if (!p) return;
     std::string delta = std::to_string(offsetMs / 1000.0);
-    const char *cmd[] = {"seek", delta.c_str(), "relative", nullptr};
+    const char *cmd[] = {"seek", delta.c_str(), "relative+exact", nullptr};
     mpv_command(p->mpv, cmd);
     p->ended.store(false);
 }
@@ -1872,6 +1947,12 @@ JNIEXPORT jstring JNICALL NP(audioTracksJson)(JNIEnv *env, jobject, jlong handle
     return utf8ToJstring(env, buildTracksJson(p->mpv, "audio"));
 }
 
+JNIEXPORT jstring JNICALL NP(stringProperty)(JNIEnv *env, jobject, jlong handle, jstring name) {
+    Player *p = asPlayer(handle);
+    if (!p) return utf8ToJstring(env, "");
+    return utf8ToJstring(env, mpvGetStr(p->mpv, jstringToUtf8(env, name)));
+}
+
 JNIEXPORT jstring JNICALL NP(subtitleTracksJson)(JNIEnv *env, jobject, jlong handle) {
     Player *p = asPlayer(handle);
     if (!p) return utf8ToJstring(env, "[]");
@@ -1884,6 +1965,14 @@ JNIEXPORT void JNICALL NP(selectAudioTrack)(JNIEnv *, jobject, jlong handle, jin
     int64_t id = trackId;
     if (trackId < 0) mpv_set_property_string(p->mpv, "aid", "no");
     else mpv_set_property(p->mpv, "aid", MPV_FORMAT_INT64, &id);
+}
+
+JNIEXPORT void JNICALL NP(setAudioLanguages)(JNIEnv *env, jobject, jlong handle, jstring languages) {
+    Player *p = asPlayer(handle);
+    if (!p) return;
+    std::string value = jstringToUtf8(env, languages);
+    mpv_set_property_string(p->mpv, "alang", value.c_str());
+    mpv_set_property_string(p->mpv, "aid", "auto");
 }
 
 JNIEXPORT void JNICALL NP(selectSubtitleTrack)(JNIEnv *, jobject, jlong handle, jint trackId) {
@@ -1919,23 +2008,30 @@ JNIEXPORT void JNICALL NP(clearExternalSubtitlesAndSelect)(JNIEnv *, jobject, jl
     else mpv_set_property(p->mpv, "sid", MPV_FORMAT_INT64, &id);
 }
 
+JNIEXPORT void JNICALL NP(setSubtitleVisible)(JNIEnv *, jobject, jlong handle, jboolean visible) {
+    Player *p = asPlayer(handle);
+    if (p) mpv_set_property_string(p->mpv, "sub-visibility", visible ? "yes" : "no");
+}
+
 JNIEXPORT void JNICALL NP(setSubtitleDelayMs)(JNIEnv *, jobject, jlong handle, jint delayMs) {
     Player *p = asPlayer(handle);
     if (p) mpvSetDouble(p->mpv, "sub-delay", delayMs / 1000.0);
 }
 
 JNIEXPORT void JNICALL NP(applySubtitleStyle)(
-    JNIEnv *env, jobject, jlong handle, jstring textColor, jstring /*backgroundColor*/,
+    JNIEnv *env, jobject, jlong handle, jstring textColor, jstring backgroundColor,
     jstring outlineColor, jfloat outlineSize, jboolean bold, jfloat fontSize, jint subPos,
     jboolean useLibass, jboolean stripSdh) {
     Player *p = asPlayer(handle);
     if (!p) return;
-    // Keep the track's own ASS styling when libass rendering is on, and let the
-    // settings below take over when it is off (matching the Windows bridge).
-    mpv_set_property_string(p->mpv, "sub-ass-override",
-                            useLibass == JNI_TRUE ? "scale" : "force");
+    mpv_set_property_string(p->mpv, "sub-ass-override", "no");
     mpv_set_property_string(p->mpv, "sub-color", jstringToUtf8(env, textColor).c_str());
     mpv_set_property_string(p->mpv, "sub-border-color", jstringToUtf8(env, outlineColor).c_str());
+    std::string background = jstringToUtf8(env, backgroundColor);
+    if (background.empty()) background = "#00000000";
+    mpv_set_property_string(p->mpv, "sub-back-color", background.c_str());
+    mpv_set_property_string(p->mpv, "sub-border-style",
+                            background.rfind("#00", 0) == 0 ? "outline-and-shadow" : "background-box");
     std::string border = std::to_string(outlineSize);
     mpv_set_property_string(p->mpv, "sub-border-size", border.c_str());
     mpv_set_property_string(p->mpv, "sub-bold", bold == JNI_TRUE ? "yes" : "no");
@@ -1946,6 +2042,19 @@ JNIEXPORT void JNICALL NP(applySubtitleStyle)(
     // Strip captions written for deaf and hard-of-hearing viewers.
     mpv_set_property_string(p->mpv, "sub-filter-sdh", stripSdh == JNI_TRUE ? "yes" : "no");
     mpv_set_property_string(p->mpv, "sub-filter-sdh-harder", stripSdh == JNI_TRUE ? "yes" : "no");
+}
+
+JNIEXPORT void JNICALL NP(setSubtitleAppearance)(
+    JNIEnv *env, jobject, jlong handle, jstring font, jstring fontsDir, jstring shadowColor,
+    jfloat shadowOffset) {
+    Player *p = asPlayer(handle);
+    if (!p) return;
+    std::string dir = jstringToUtf8(env, fontsDir);
+    if (!dir.empty()) mpv_set_property_string(p->mpv, "sub-fonts-dir", dir.c_str());
+    mpv_set_property_string(p->mpv, "sub-font", jstringToUtf8(env, font).c_str());
+    mpv_set_property_string(p->mpv, "sub-shadow-color", jstringToUtf8(env, shadowColor).c_str());
+    std::string offset = std::to_string(shadowOffset);
+    mpv_set_property_string(p->mpv, "sub-shadow-offset", offset.c_str());
 }
 
 // ---- Phase 2 stubs: webview controls / window chrome / focus ------------
@@ -2025,6 +2134,8 @@ JNIEXPORT jboolean JNICALL NP(setWindowsDisplaySleepInhibited)(JNIEnv *, jobject
 }
 JNIEXPORT void JNICALL NP(beginWindowDrag)(JNIEnv *, jobject, jlong) {}
 JNIEXPORT void JNICALL NP(setWindowResizable)(JNIEnv *, jobject, jlong, jboolean) {}
+JNIEXPORT void JNICALL NP(setWindowAspectRatio)(JNIEnv *, jobject, jlong, jfloat) {}
+JNIEXPORT void JNICALL NP(layoutNativeSubviews)(JNIEnv *, jobject, jlong) {}
 JNIEXPORT void JNICALL NP(reparentSurfaceNative)(JNIEnv *, jobject, jlong, jlong) {}
 
 #undef NP

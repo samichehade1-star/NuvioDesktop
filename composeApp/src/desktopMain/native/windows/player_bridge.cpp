@@ -2,6 +2,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <windowsx.h>
+#include <d3d11.h>
 #include <dwmapi.h>
 #include <shlobj.h>
 #include <wrl.h>
@@ -11,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <clocale>
 #include <cmath>
 #include <condition_variable>
 #include <cctype>
@@ -72,9 +75,11 @@ const wchar_t *kMessageWindowClass = L"NuvioPlayerBridgeMessageWindow";
 const wchar_t *kContainerWindowClass = L"NuvioPlayerBridgeContainerWindow";
 constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
 constexpr DWORD kDwmwaUseImmersiveDarkModeLegacy = 19;
+constexpr DWORD kDwmwaWindowCornerPreference = 33;
 constexpr DWORD kDwmwaBorderColor = 34;
 constexpr DWORD kDwmwaCaptionColor = 35;
 constexpr DWORD kDwmwaTextColor = 36;
+constexpr DWORD kDwmwcpRound = 2;
 
 struct BorderlessFullscreenState {
     LONG_PTR style = 0;
@@ -466,7 +471,7 @@ std::string hresultMessage(const char *operation, HRESULT hr) {
     return builder.str();
 }
 
-std::wstring webViewUserDataDirectory() {
+std::wstring localAppDataDirectory(const wchar_t *name) {
     PWSTR localAppData = nullptr;
     HRESULT result = SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &localAppData);
     if (FAILED(result) || !localAppData) {
@@ -475,12 +480,38 @@ std::wstring webViewUserDataDirectory() {
     }
     std::wstring directory(localAppData);
     CoTaskMemFree(localAppData);
-    directory += L"\\Nuvio\\WebView2";
+    directory += L"\\Nuvio\\";
+    directory += name;
     int createResult = SHCreateDirectoryExW(nullptr, directory.c_str(), nullptr);
     if (createResult != ERROR_SUCCESS && createResult != ERROR_ALREADY_EXISTS && createResult != ERROR_FILE_EXISTS) {
-        throw std::runtime_error("Failed to create WebView2 user data directory");
+        throw std::runtime_error("Failed to create Nuvio local data directory");
     }
     return directory;
+}
+
+std::wstring webViewUserDataDirectory() {
+    return localAppDataDirectory(L"WebView2");
+}
+
+std::string mpvShaderCacheDirectory() {
+    try {
+        return toUtf8(localAppDataDirectory(L"Cache\\mpv-shaders"));
+    } catch (...) {
+        return std::string();
+    }
+}
+
+bool unifiedMemoryGpu() {
+    static const bool unified = []() {
+        ComPtr<ID3D11Device> device;
+        if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr))) {
+            return false;
+        }
+        D3D11_FEATURE_DATA_D3D11_OPTIONS2 options = {};
+        return SUCCEEDED(device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS2, &options, sizeof(options))) &&
+            options.UnifiedMemoryArchitecture;
+    }();
+    return unified;
 }
 
 struct MpvApi {
@@ -850,6 +881,7 @@ public:
         JavaVM *vm,
         int decoderPriority,
         bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled,
         jobject sink,
         jmethodID method
     ) {
@@ -865,8 +897,8 @@ public:
         auto initState = std::make_shared<InitializationState>();
         auto self = shared_from_this();
         uiThread = std::thread(
-            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, decoderPriority, nvidiaRtxSuperResolutionEnabled, initState]() {
-                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, decoderPriority, nvidiaRtxSuperResolutionEnabled, initState);
+            [self, sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, decoderPriority, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, initState]() {
+                self->runNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, decoderPriority, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, initState);
             }
         );
 
@@ -1002,11 +1034,68 @@ public:
         PostMessageW(rootWindow, WM_NCLBUTTONDOWN, HTCAPTION, MAKELPARAM(pt.x, pt.y));
     }
 
+    void beginWindowResize(int hitTest) {
+        if (!containerHwnd) return;
+        HWND rootWindow = GetAncestor(containerHwnd, GA_ROOT);
+        if (!rootWindow || !IsWindow(rootWindow)) return;
+        ReleaseCapture();
+        POINT pt;
+        GetCursorPos(&pt);
+        PostMessageW(rootWindow, WM_NCLBUTTONDOWN, hitTest, MAKELPARAM(pt.x, pt.y));
+    }
+
+    void notifyNativeResizeStarted() {
+        postUiTask([self = shared_from_this()]() {
+            if (self->shuttingDown.load() || !self->webView) return;
+            self->webView->ExecuteScript(
+                L"window.nuvioNativeViewportChanged ? window.nuvioNativeViewportChanged() : document.getElementById('playerRoot')?.classList.add('native-resizing');",
+                nullptr
+            );
+        });
+    }
+
+    void notifyNativeResizeEnded() {
+        postUiTask([self = shared_from_this()]() {
+            if (self->shuttingDown.load() || !self->webView) return;
+            self->webView->ExecuteScript(
+                L"window.nuvioNativeResizeEnded ? window.nuvioNativeResizeEnded() : document.getElementById('playerRoot')?.classList.remove('native-resizing');",
+                nullptr
+            );
+        });
+    }
+
+    void syncNativeBounds(int width, int height) {
+        if (shuttingDown.load() || width <= 0 || height <= 0) return;
+        if (hostHwnd && IsWindow(hostHwnd)) {
+            SetWindowPos(hostHwnd, nullptr, 0, 0, width, height,
+                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        }
+        if (containerHwnd && IsWindow(containerHwnd)) {
+            SetWindowPos(containerHwnd, nullptr, 0, 0, width, height,
+                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        }
+        layoutNativeSubviewsAsync();
+    }
+
+    void layoutNativeSubviewsAsync() {
+        if (layoutSubviewsPending.exchange(true)) {
+            return;
+        }
+        postUiTask([self = shared_from_this()]() {
+            self->layoutSubviewsPending.store(false);
+            if (self->shuttingDown.load()) return;
+            self->layoutNativeSubviews();
+        });
+    }
+
     void reparentSurface(HWND newHost) {
         if (!newHost || !IsWindow(newHost)) return;
         sendUiTask([self = shared_from_this(), newHost]() {
             if (self->shuttingDown.load() || !IsWindow(newHost) || !self->containerHwnd) return;
             self->hostHwnd = newHost;
+            LONG_PTR hostStyle = GetWindowLongPtrW(newHost, GWL_STYLE);
+            hostStyle |= WS_CLIPCHILDREN;
+            SetWindowLongPtrW(newHost, GWL_STYLE, hostStyle);
             SetParent(self->containerHwnd, newHost);
             LONG_PTR style = GetWindowLongPtrW(self->containerHwnd, GWL_STYLE);
             style |= WS_CHILD;
@@ -1033,7 +1122,7 @@ public:
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
         std::string seconds = std::to_string((double)positionMs / 1000.0);
-        const char *command[] = {"seek", seconds.c_str(), "absolute+keyframes", nullptr};
+        const char *command[] = {"seek", seconds.c_str(), "absolute+exact", nullptr};
         mpvApi().command(mpv, command);
     }
 
@@ -1041,7 +1130,7 @@ public:
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
         std::string seconds = std::to_string((double)offsetMs / 1000.0);
-        const char *command[] = {"seek", seconds.c_str(), "relative+keyframes", nullptr};
+        const char *command[] = {"seek", seconds.c_str(), "relative+exact", nullptr};
         mpvApi().command(mpv, command);
     }
 
@@ -1123,6 +1212,10 @@ public:
         return flagProperty("eof-reached", false);
     }
 
+    std::string mpvStringProperty(const char *name) {
+        return stringProperty(name, "");
+    }
+
     std::string audioTracksJson() {
         return tracksJsonForType("audio");
     }
@@ -1156,6 +1249,13 @@ public:
         mpvApi().setProperty(mpv, "aid", MPV_FORMAT_INT64, &id);
     }
 
+    void setAudioLanguages(const std::string &languages) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        mpvApi().setPropertyString(mpv, "alang", languages.c_str());
+        mpvApi().setPropertyString(mpv, "aid", "auto");
+    }
+
     void selectSubtitleTrackId(int trackId) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
@@ -1186,12 +1286,32 @@ public:
         }
     }
 
+    void setSubtitleVisible(bool visible) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        mpvApi().setPropertyString(mpv, "sub-visibility", visible ? "yes" : "no");
+    }
+
     void setSubtitleDelayMs(int delayMs) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
         int clamped = std::max(-60000, std::min(60000, delayMs));
         double delaySeconds = (double)clamped / 1000.0;
         mpvApi().setProperty(mpv, "sub-delay", MPV_FORMAT_DOUBLE, &delaySeconds);
+    }
+
+    void applySubtitleAppearance(
+        const std::string &font,
+        const std::string &fontsDir,
+        const std::string &shadowColor,
+        double shadowOffset
+    ) {
+        if (!fontsDir.empty()) setStringProperty("sub-fonts-dir", fontsDir);
+        setStringProperty("sub-font", font);
+        setStringProperty("sub-shadow-color", shadowColor);
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        mpvApi().setProperty(mpv, "sub-shadow-offset", MPV_FORMAT_DOUBLE, &shadowOffset);
     }
 
     void applySubtitleStyle(
@@ -1207,7 +1327,7 @@ public:
     ) {
         double size = std::max(18.0, std::min(96.0, fontSize));
         int64_t position = std::max(0, std::min(150, subPos));
-        double scale = useLibass ? size / 54.0 : 1.0;
+        double scale = 1.0;
         double outline = std::max(0.0, std::min(8.0, outlineSize));
         std::string resolvedTextColor = textColor.empty() ? "#FFFFFFFF" : textColor;
         std::string resolvedBackgroundColor = backgroundColor.empty() ? "#00000000" : backgroundColor;
@@ -1226,18 +1346,12 @@ public:
         bool stripSdhChanged = !hasAppliedSubtitleStyle || appliedSubtitleStripSdh != stripSdh;
 
         if (modeChanged) {
-            setStringProperty("sub-ass-override", useLibass ? "scale" : "force");
+            setStringProperty("sub-ass-override", "no");
         }
-        if (modeChanged || (!useLibass && boldChanged)) {
+        if (modeChanged) {
             std::lock_guard<std::mutex> lock(mpvMutex);
             if (!mpv) return;
-            const char *styleOverridesCommand[] = {
-                "change-list",
-                "sub-ass-style-overrides",
-                useLibass ? "clr" : "set",
-                useLibass ? "" : (bold ? "Bold=1" : "Bold=0"),
-                nullptr,
-            };
+            const char *styleOverridesCommand[] = {"change-list", "sub-ass-style-overrides", "clr", "", nullptr};
             mpvApi().command(mpv, styleOverridesCommand);
         }
         if (modeChanged || sizeChanged || positionChanged) {
@@ -1252,7 +1366,7 @@ public:
             }
         }
 
-        if (!useLibass) {
+        {
             if (modeChanged || textColorChanged) {
                 setStringProperty("sub-color", resolvedTextColor);
             }
@@ -1260,7 +1374,7 @@ public:
                 setStringProperty("sub-back-color", resolvedBackgroundColor);
                 setStringProperty(
                     "sub-border-style",
-                    resolvedBackgroundColor.rfind("#00", 0) == 0 ? "outline-and-shadow" : "opaque-box"
+                    resolvedBackgroundColor.rfind("#00", 0) == 0 ? "outline-and-shadow" : "background-box"
                 );
             }
             if (modeChanged || outlineColorChanged) {
@@ -1332,6 +1446,7 @@ private:
     jmethodID eventMethod = nullptr;
 
     std::atomic_bool controlsWebReady = false;
+    std::atomic_bool layoutSubviewsPending = false;
     std::mutex controlsMutex;
     std::string pendingControlsJson;
     double initialStartSeconds = 0.0;
@@ -1347,11 +1462,12 @@ private:
         std::string controlsUrl,
         int decoderPriority,
         bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled,
         std::shared_ptr<InitializationState> initState
     ) {
         std::string failure;
         try {
-            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, decoderPriority, nvidiaRtxSuperResolutionEnabled);
+            initializeOnNativeUiThread(sourceUrl, headerLines, playWhenReady, initialPositionMs, controlsUrl, decoderPriority, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled);
         } catch (const std::exception &error) {
             failure = error.what();
             cleanupUiResources();
@@ -1382,7 +1498,8 @@ private:
         long long initialPositionMs,
         const std::string &controlsUrl,
         int decoderPriority,
-        bool nvidiaRtxSuperResolutionEnabled
+        bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled
     ) {
         registerWindowClasses();
         uiThreadId = GetCurrentThreadId();
@@ -1434,7 +1551,7 @@ private:
         }
 
         startWebView(controlsUrl);
-        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs, decoderPriority, nvidiaRtxSuperResolutionEnabled);
+        startMpv(sourceUrl, headerLines, playWhenReady, initialPositionMs, decoderPriority, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled);
         layoutNativeSubviews();
         if (!SetTimer(messageHwnd, NUVIO_TIMER_ID, 500, nullptr)) {
             throw std::runtime_error("Unable to start native player timer.");
@@ -1629,11 +1746,20 @@ private:
         bool playWhenReady,
         long long initialPositionMs,
         int decoderPriority,
-        bool nvidiaRtxSuperResolutionEnabled
+        bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled
     ) {
         MpvApi &api = mpvApi();
+        bool rtxVideoEnabled = nvidiaRtxSuperResolutionEnabled || nvidiaRtxHdrEnabled;
+        bool fastProfile = !rtxVideoEnabled && unifiedMemoryGpu();
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
+            // libmpv requires LC_NUMERIC=C: non-"C" locales that use comma
+            // decimals make mpv_create fail. The JVM formats numbers through
+            // java.util.Locale, so this C-level change does not affect Java.
+            if (setlocale(LC_NUMERIC, "C") == nullptr) {
+                throw std::runtime_error("setlocale(LC_NUMERIC, \"C\") failed.");
+            }
             mpv = api.create();
             if (!mpv) {
                 throw std::runtime_error("mpv_create failed.");
@@ -1646,8 +1772,8 @@ private:
             setMpvOptionStringLocked("input-vo-keyboard", "no");
             setMpvOptionStringLocked("keep-open", "yes");
             setMpvOptionStringLocked("volume-max", "200");
-            setMpvOptionStringLocked("vo", "gpu-next");
-            if (nvidiaRtxSuperResolutionEnabled) {
+            setMpvOptionStringLocked("vo", "gpu-next,gpu,");
+            if (rtxVideoEnabled) {
                 setMpvOptionStringLocked("gpu-api", "d3d11");
                 setMpvOptionStringLocked("hwdec", "d3d11va");
                 setMpvOptionStringLocked("d3d11-adapter", "NVIDIA");
@@ -1657,8 +1783,18 @@ private:
             }
             setMpvOptionStringLocked("hwdec-codecs", "all");
 
-            if (nvidiaRtxSuperResolutionEnabled) {
+            if (nvidiaRtxSuperResolutionEnabled && nvidiaRtxHdrEnabled) {
+                setMpvOptionStringLocked(
+                    "vf",
+                    "d3d11vpp=scale=2:scaling-mode=nvidia:format=x2bgr10:nvidia-true-hdr,format=x2bgr10:transfer=pq:primaries=bt.2020"
+                );
+            } else if (nvidiaRtxSuperResolutionEnabled) {
                 setMpvOptionStringLocked("vf", "d3d11vpp=scale=2:scaling-mode=nvidia");
+            } else if (nvidiaRtxHdrEnabled) {
+                setMpvOptionStringLocked(
+                    "vf",
+                    "d3d11vpp=format=x2bgr10:nvidia-true-hdr,format=x2bgr10:transfer=pq:primaries=bt.2020"
+                );
             }
             setMpvOptionStringLocked("target-colorspace-hint", "yes");
             if (decoderPriority == 0) {
@@ -1670,16 +1806,26 @@ private:
                 setMpvOptionStringLocked("vd-lavc-software-fallback", "yes");
             }
             setMpvOptionStringLocked("vd-lavc-threads", "4");
-            setMpvOptionStringLocked("tone-mapping", "auto");
+            setMpvOptionStringLocked("tone-mapping", "bt.2390");
             setMpvOptionStringLocked("dither-depth", "auto");
-            setMpvOptionStringLocked("deband", "yes");
-            setMpvOptionStringLocked("scale", "spline36");
-            setMpvOptionStringLocked("cscale", "spline36");
-            setMpvOptionStringLocked("demuxer-max-bytes", "512MiB");
-            setMpvOptionStringLocked("demuxer-max-back-bytes", "256MiB");
+            if (fastProfile) {
+                setMpvOptionStringLocked("profile", "fast");
+            } else {
+                setMpvOptionStringLocked("deband", "yes");
+                setMpvOptionStringLocked("scale", "spline36");
+                setMpvOptionStringLocked("cscale", "spline36");
+            }
+            setMpvOptionStringLocked("demuxer-max-bytes", "150MiB");
+            setMpvOptionStringLocked("demuxer-max-back-bytes", "50MiB");
             setMpvOptionStringLocked("demuxer-seekable-cache", "yes");
-            setMpvOptionStringLocked("cache-secs", "36000");
-            setMpvOptionStringLocked("hr-seek", "no");
+            setMpvOptionStringLocked(
+                "stream-lavf-o",
+                "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=%23%408,429,500,502,503,504,reconnect_delay_max=15"
+            );
+            std::string shaderCacheDirectory = mpvShaderCacheDirectory();
+            if (!shaderCacheDirectory.empty()) {
+                setMpvOptionStringLocked("gpu-shader-cache-dir", shaderCacheDirectory.c_str());
+            }
 
             int64_t wid = (int64_t)(intptr_t)containerHwnd;
             int widResult = api.setOption(mpv, "wid", MPV_FORMAT_INT64, &wid);
@@ -1733,11 +1879,19 @@ private:
             return;
         }
         RECT bounds = {};
-        GetClientRect(hostHwnd, &bounds);
+        HWND rootWindow = GetAncestor(hostHwnd, GA_ROOT);
+        if (rootWindow && IsWindow(rootWindow) && GetPropW(rootWindow, L"NuvioPipOldProc")) {
+            GetClientRect(rootWindow, &bounds);
+            LONG rw = std::max<LONG>(1, bounds.right - bounds.left);
+            LONG rh = std::max<LONG>(1, bounds.bottom - bounds.top);
+            SetWindowPos(hostHwnd, nullptr, 0, 0, rw, rh, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        } else {
+            GetClientRect(hostHwnd, &bounds);
+        }
         LONG width = std::max<LONG>(1, bounds.right - bounds.left);
         LONG height = std::max<LONG>(1, bounds.bottom - bounds.top);
         if (containerHwnd) {
-            SetWindowPos(containerHwnd, HWND_TOP, 0, 0, width, height, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+            SetWindowPos(containerHwnd, HWND_TOP, 0, 0, width, height, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOCOPYBITS);
         }
         if (controller) {
             RECT webBounds = {0, 0, width, height};
@@ -1784,6 +1938,7 @@ private:
         if (!webView) return;
         double duration = doubleProperty("duration", 0.0);
         double position = doubleProperty("time-pos", 0.0);
+        double bufferedPosition = (double)(bufferedPositionMs() / 1000.0);
         double volumeLevel = volume();
         bool paused = isPaused();
         bool loading = isLoading();
@@ -1793,6 +1948,7 @@ private:
         std::ostringstream script;
         script << "window.playerUpdate({duration:" << duration
                << ",position:" << position
+               << ",bufferedPosition:" << bufferedPosition
                << ",volumeLevel:" << volumeLevel
                << ",paused:" << (paused ? "true" : "false")
                << ",loading:" << (loading ? "true" : "false")
@@ -1814,11 +1970,6 @@ private:
             syncControls();
             return;
         }
-        if (type == "selectAudioTrack") {
-            selectAudioTrackId((int)std::llround(value));
-            syncControls();
-            return;
-        }
         if (type == "selectSubtitleTrack") {
             selectSubtitleTrackId((int)std::llround(value));
             syncControls();
@@ -1835,6 +1986,13 @@ private:
         }
         if (type == "dragWindow") {
             beginWindowDrag();
+            return;
+        }
+        if (type == "resizeWindow") {
+            int hitTest = (int)std::llround(value);
+            if (hitTest >= 10 && hitTest <= 17) {
+                beginWindowResize(hitTest);
+            }
             return;
         }
         sendPlayerEvent(type, value);
@@ -2043,7 +2201,8 @@ private:
             if (cacheTime >= effectivePosition - 5.0) {
                 return std::max(cacheTime - effectivePosition, 0.0);
             }
-            return cacheTime;
+            double rawPosition = rawPositionSeconds();
+            return std::max(cacheTime - rawPosition, 0.0);
         }
 
         double cacheDuration = doubleProperty("demuxer-cache-duration", 0.0);
@@ -2232,8 +2391,15 @@ LRESULT CALLBACK containerWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPA
         case WM_LBUTTONDBLCLK:
             if (player) player->sendPlayerEvent("toggleFullscreen", 0.0);
             return 0;
-        case WM_SIZE:
+        case WM_SIZE: {
+            LONG w = LOWORD(lParam);
+            LONG h = HIWORD(lParam);
+            if (player && player->controller && w > 0 && h > 0) {
+                RECT webBounds = {0, 0, w, h};
+                player->controller->put_Bounds(webBounds);
+            }
             return 0;
+        }
         case WM_ERASEBKGND: {
             RECT rect = {};
             GetClientRect(hwnd, &rect);
@@ -2276,6 +2442,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jstring controlsPageUrl,
     jint decoderPriority,
     jboolean nvidiaRtxSuperResolutionEnabled,
+    jboolean nvidiaRtxHdrEnabled,
     jobject eventSink
 ) {
     HWND hostHwnd = (HWND)(intptr_t)hostViewPtr;
@@ -2311,6 +2478,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
             javaVm,
             decoderPriority,
             nvidiaRtxSuperResolutionEnabled == JNI_TRUE,
+            nvidiaRtxHdrEnabled == JNI_TRUE,
             eventSinkRef,
             eventMethod
         );
@@ -2369,6 +2537,223 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_beginWindowDrag(JN
     if (player) player->beginWindowDrag();
 }
 
+static LRESULT CALLBACK pipWindowSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    WNDPROC oldProc = reinterpret_cast<WNDPROC>(GetPropW(hwnd, L"NuvioPipOldProc"));
+
+    if (message == WM_NCCALCSIZE) {
+        return 0;
+    }
+
+    if (message == WM_NCHITTEST) {
+        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        RECT rc = {};
+        GetWindowRect(hwnd, &rc);
+        const int border = 8;
+        bool left = (pt.x >= rc.left && pt.x < rc.left + border);
+        bool right = (pt.x < rc.right && pt.x >= rc.right - border);
+        bool top = (pt.y >= rc.top && pt.y < rc.top + border);
+        bool bottom = (pt.y < rc.bottom && pt.y >= rc.bottom - border);
+
+        if (top && left) return HTTOPLEFT;
+        if (top && right) return HTTOPRIGHT;
+        if (bottom && left) return HTBOTTOMLEFT;
+        if (bottom && right) return HTBOTTOMRIGHT;
+        if (left) return HTLEFT;
+        if (right) return HTRIGHT;
+        if (top) return HTTOP;
+        if (bottom) return HTBOTTOM;
+        return HTCLIENT;
+    }
+
+    if (message == WM_SIZING) {
+        PRECT rc = reinterpret_cast<PRECT>(lParam);
+        float ratio = 16.0f / 9.0f;
+        HANDLE prop = GetPropW(hwnd, L"NuvioPipRatio");
+        if (prop) {
+            float r = static_cast<float>(reinterpret_cast<uintptr_t>(prop)) / 10000.0f;
+            if (r > 0.05f) ratio = r;
+        }
+
+        int minWinW = 320;
+        int minWinH = std::max<int>(180, static_cast<int>(std::round(minWinW / ratio)));
+
+        int currentW = std::max<int>(1, rc->right - rc->left);
+        int currentH = std::max<int>(1, rc->bottom - rc->top);
+
+        switch (wParam) {
+            case WMSZ_LEFT: {
+                int winW = std::max<int>(minWinW, currentW);
+                int winH = std::max<int>(minWinH, static_cast<int>(std::round(winW / ratio)));
+                rc->left = rc->right - winW;
+                rc->top = rc->bottom - winH;
+                return TRUE;
+            }
+            case WMSZ_RIGHT: {
+                int winW = std::max<int>(minWinW, currentW);
+                int winH = std::max<int>(minWinH, static_cast<int>(std::round(winW / ratio)));
+                rc->right = rc->left + winW;
+                rc->bottom = rc->top + winH;
+                return TRUE;
+            }
+            case WMSZ_TOP: {
+                int winH = std::max<int>(minWinH, currentH);
+                int winW = std::max<int>(minWinW, static_cast<int>(std::round(winH * ratio)));
+                rc->top = rc->bottom - winH;
+                rc->right = rc->left + winW;
+                return TRUE;
+            }
+            case WMSZ_BOTTOM: {
+                int winH = std::max<int>(minWinH, currentH);
+                int winW = std::max<int>(minWinW, static_cast<int>(std::round(winH * ratio)));
+                rc->bottom = rc->top + winH;
+                rc->right = rc->left + winW;
+                return TRUE;
+            }
+            case WMSZ_BOTTOMRIGHT: {
+                int winW, winH;
+                if ((float)currentW / (float)currentH > ratio) {
+                    winW = std::max<int>(minWinW, currentW);
+                    winH = std::max<int>(minWinH, static_cast<int>(std::round(winW / ratio)));
+                } else {
+                    winH = std::max<int>(minWinH, currentH);
+                    winW = std::max<int>(minWinW, static_cast<int>(std::round(winH * ratio)));
+                }
+                rc->right = rc->left + winW;
+                rc->bottom = rc->top + winH;
+                return TRUE;
+            }
+            case WMSZ_BOTTOMLEFT: {
+                int winW, winH;
+                if ((float)currentW / (float)currentH > ratio) {
+                    winW = std::max<int>(minWinW, currentW);
+                    winH = std::max<int>(minWinH, static_cast<int>(std::round(winW / ratio)));
+                } else {
+                    winH = std::max<int>(minWinH, currentH);
+                    winW = std::max<int>(minWinW, static_cast<int>(std::round(winH * ratio)));
+                }
+                rc->left = rc->right - winW;
+                rc->bottom = rc->top + winH;
+                return TRUE;
+            }
+            case WMSZ_TOPRIGHT: {
+                int winW, winH;
+                if ((float)currentW / (float)currentH > ratio) {
+                    winW = std::max<int>(minWinW, currentW);
+                    winH = std::max<int>(minWinH, static_cast<int>(std::round(winW / ratio)));
+                } else {
+                    winH = std::max<int>(minWinH, currentH);
+                    winW = std::max<int>(minWinW, static_cast<int>(std::round(winH * ratio)));
+                }
+                rc->right = rc->left + winW;
+                rc->top = rc->bottom - winH;
+                return TRUE;
+            }
+            case WMSZ_TOPLEFT: {
+                int winW, winH;
+                if ((float)currentW / (float)currentH > ratio) {
+                    winW = std::max<int>(minWinW, currentW);
+                    winH = std::max<int>(minWinH, static_cast<int>(std::round(winW / ratio)));
+                } else {
+                    winH = std::max<int>(minWinH, currentH);
+                    winW = std::max<int>(minWinW, static_cast<int>(std::round(winH * ratio)));
+                }
+                rc->left = rc->right - winW;
+                rc->top = rc->bottom - winH;
+                return TRUE;
+            }
+            default:
+                break;
+        }
+    }
+
+    if (message == WM_GETMINMAXINFO) {
+        LPMINMAXINFO mmi = reinterpret_cast<LPMINMAXINFO>(lParam);
+        mmi->ptMinTrackSize.x = 320;
+        mmi->ptMinTrackSize.y = 180;
+        return 0;
+    }
+
+    if (message == WM_ERASEBKGND) {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        RECT rc = {};
+        GetClientRect(hwnd, &rc);
+        FillRect(hdc, &rc, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+        return 1;
+    }
+
+    if (message == WM_ENTERSIZEMOVE) {
+        HANDLE playerProp = GetPropW(hwnd, L"NuvioPipPlayer");
+        if (playerProp) {
+            jlong playerHandle = static_cast<jlong>(reinterpret_cast<intptr_t>(playerProp));
+            auto player = playerFromHandle(playerHandle);
+            if (player) {
+                player->notifyNativeResizeStarted();
+            }
+        }
+    }
+
+    if (message == WM_WINDOWPOSCHANGED) {
+        LRESULT res = oldProc ? CallWindowProcW(oldProc, hwnd, message, wParam, lParam)
+                              : DefWindowProcW(hwnd, message, wParam, lParam);
+        WINDOWPOS* wp = reinterpret_cast<WINDOWPOS*>(lParam);
+        if (!(wp->flags & SWP_NOSIZE) && wp->cx > 0 && wp->cy > 0) {
+            RECT clientRect = {};
+            GetClientRect(hwnd, &clientRect);
+            int w = clientRect.right - clientRect.left;
+            int h = clientRect.bottom - clientRect.top;
+            if (w > 0 && h > 0) {
+                HANDLE playerProp = GetPropW(hwnd, L"NuvioPipPlayer");
+                if (playerProp) {
+                    jlong playerHandle = static_cast<jlong>(reinterpret_cast<intptr_t>(playerProp));
+                    auto player = playerFromHandle(playerHandle);
+                    if (player) {
+                        player->syncNativeBounds(w, h);
+                    }
+                }
+            }
+        }
+        return res;
+    }
+
+    if (message == WM_EXITSIZEMOVE) {
+        LRESULT res = oldProc ? CallWindowProcW(oldProc, hwnd, message, wParam, lParam)
+                              : DefWindowProcW(hwnd, message, wParam, lParam);
+        HANDLE playerProp = GetPropW(hwnd, L"NuvioPipPlayer");
+        if (playerProp) {
+            jlong playerHandle = static_cast<jlong>(reinterpret_cast<intptr_t>(playerProp));
+            auto player = playerFromHandle(playerHandle);
+            if (player) {
+                RECT clientRect = {};
+                GetClientRect(hwnd, &clientRect);
+                int w = clientRect.right - clientRect.left;
+                int h = clientRect.bottom - clientRect.top;
+                if (w > 0 && h > 0) {
+                    player->syncNativeBounds(w, h);
+                }
+                player->notifyNativeResizeEnded();
+                player->requestFocus();
+            }
+        }
+        return res;
+    }
+
+    if (message == WM_NCDESTROY) {
+        RemovePropW(hwnd, L"NuvioPipRatio");
+        RemovePropW(hwnd, L"NuvioPipPlayer");
+        RemovePropW(hwnd, L"NuvioPipOldProc");
+        if (oldProc) {
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(oldProc));
+            return CallWindowProcW(oldProc, hwnd, message, wParam, lParam);
+        }
+        return DefWindowProcW(hwnd, message, wParam, lParam);
+    }
+
+    if (oldProc) {
+        return CallWindowProcW(oldProc, hwnd, message, wParam, lParam);
+    }
+    return DefWindowProcW(hwnd, message, wParam, lParam);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setWindowResizable(
     JNIEnv *, jobject, jlong windowHwnd, jboolean enabled
@@ -2377,23 +2762,73 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setWindowResizable
     if (!window || !IsWindow(window)) return;
     LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
     if (enabled == JNI_TRUE) {
-        style |= WS_THICKFRAME;
+        style |= (WS_THICKFRAME | WS_CLIPCHILDREN);
         style &= ~(WS_CAPTION | WS_SYSMENU | WS_MAXIMIZEBOX | WS_MINIMIZEBOX);
+        if (!GetPropW(window, L"NuvioPipOldProc")) {
+            WNDPROC oldProc = reinterpret_cast<WNDPROC>(
+                SetWindowLongPtrW(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(pipWindowSubclassProc))
+            );
+            if (oldProc) {
+                SetPropW(window, L"NuvioPipOldProc", reinterpret_cast<HANDLE>(oldProc));
+            }
+        }
+        MARGINS margins = { 1, 1, 1, 1 };
+        DwmExtendFrameIntoClientArea(window, &margins);
+        DWORD cornerPreference = kDwmwcpRound;
+        setDwmWindowAttribute(window, kDwmwaWindowCornerPreference, &cornerPreference, sizeof(cornerPreference));
+        COLORREF borderColor = RGB(65, 65, 65);
+        setDwmWindowAttribute(window, kDwmwaBorderColor, &borderColor, sizeof(borderColor));
+        COLORREF captionColor = RGB(0, 0, 0);
+        setDwmWindowAttribute(window, kDwmwaCaptionColor, &captionColor, sizeof(captionColor));
     } else {
         style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX);
+        WNDPROC oldProc = reinterpret_cast<WNDPROC>(GetPropW(window, L"NuvioPipOldProc"));
+        if (oldProc) {
+            SetWindowLongPtrW(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(oldProc));
+            RemovePropW(window, L"NuvioPipOldProc");
+        }
+        RemovePropW(window, L"NuvioPipPlayer");
+        RemovePropW(window, L"NuvioPipRatio");
     }
     SetWindowLongPtrW(window, GWL_STYLE, style);
-    COLORREF black = RGB(0, 0, 0);
-    DwmSetWindowAttribute(window, DWMWA_BORDER_COLOR, &black, sizeof(black));
-    DwmSetWindowAttribute(window, DWMWA_CAPTION_COLOR, &black, sizeof(black));
     SetWindowPos(window, nullptr, 0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setWindowAspectRatio(
+    JNIEnv *, jobject, jlong windowHwnd, jfloat ratio
+) {
+    HWND window = (HWND)(intptr_t)windowHwnd;
+    if (!window || !IsWindow(window)) return;
+    if (ratio <= 0.05f) return;
+    uintptr_t ratioInt = static_cast<uintptr_t>(std::round(ratio * 10000.0f));
+    SetPropW(window, L"NuvioPipRatio", reinterpret_cast<HANDLE>(ratioInt));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_layoutNativeSubviews(
+    JNIEnv *, jobject, jlong handle
+) {
+    auto player = playerFromHandle(handle);
+    if (player) {
+        player->layoutNativeSubviewsAsync();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_reparentSurfaceNative(JNIEnv *, jobject, jlong handle, jlong hostViewPtr) {
     auto player = playerFromHandle(handle);
-    if (player) player->reparentSurface((HWND)(intptr_t)hostViewPtr);
+    if (player) {
+        HWND host = (HWND)(intptr_t)hostViewPtr;
+        if (host && IsWindow(host)) {
+            HWND rootWindow = GetAncestor(host, GA_ROOT);
+            if (rootWindow && IsWindow(rootWindow) && GetPropW(rootWindow, L"NuvioPipOldProc")) {
+                SetPropW(rootWindow, L"NuvioPipPlayer", reinterpret_cast<HANDLE>(static_cast<intptr_t>(handle)));
+            }
+        }
+        player->reparentSurface(host);
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -2493,6 +2928,12 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_audioTracksJson(JN
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_stringProperty(JNIEnv *env, jobject, jlong handle, jstring name) {
+    auto player = playerFromHandle(handle);
+    return newJavaStringUtf8(env, player ? player->mpvStringProperty(jstringToUtf8(env, name).c_str()) : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson(JNIEnv *env, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
     return newJavaStringUtf8(env, player ? player->subtitleTracksJson() : "[]");
@@ -2508,6 +2949,12 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectAudioTrack(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
     if (player) player->selectAudioTrackId(trackId);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setAudioLanguages(JNIEnv *env, jobject, jlong handle, jstring languages) {
+    auto player = playerFromHandle(handle);
+    if (player) player->setAudioLanguages(jstringToUtf8(env, languages));
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -2583,6 +3030,12 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setWindowBorderles
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleVisible(JNIEnv *, jobject, jlong handle, jboolean visible) {
+    auto player = playerFromHandle(handle);
+    if (player) player->setSubtitleVisible(visible == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleDelayMs(JNIEnv *, jobject, jlong handle, jint delayMs) {
     auto player = playerFromHandle(handle);
     if (player) player->setSubtitleDelayMs(delayMs);
@@ -2615,5 +3068,25 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applySubtitleStyle
         subPos,
         useLibass == JNI_TRUE,
         stripSdh == JNI_TRUE
+    );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleAppearance(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring font,
+    jstring fontsDir,
+    jstring shadowColor,
+    jfloat shadowOffset
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->applySubtitleAppearance(
+        jstringToUtf8(env, font),
+        jstringToUtf8(env, fontsDir),
+        jstringToUtf8(env, shadowColor),
+        shadowOffset
     );
 }

@@ -124,7 +124,7 @@ actual fun rememberIsInPictureInPicture(): Boolean {
 }
 
 @Composable
-actual fun rememberPlayerGestureController(): PlayerGestureController? {
+internal actual fun rememberPlatformPlayerGestureController(): PlayerGestureController? {
     val context = LocalContext.current
     val activity = context.findActivity() ?: return null
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return null
@@ -153,7 +153,6 @@ private tailrec fun Context.findActivity(): Activity? =
     }
 
 private fun Activity.shouldForceLandscapePlayer(): Boolean {
-    if (resources.configuration.smallestScreenWidthDp >= 600) return false
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode) return false
     return true
 }

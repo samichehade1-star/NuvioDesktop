@@ -14,10 +14,17 @@ import coil3.compose.setSingletonImageLoaderFactory
 import coil3.request.CachePolicy
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
+import com.nuvio.app.core.poster.CustomPosterFallbackInterceptor
 import com.nuvio.app.core.ui.NativeProfileSwitcherController
 import com.nuvio.app.core.ui.NuvioTheme
+import com.nuvio.app.core.ui.nuvioTrackFocusPresence
+import com.nuvio.app.core.ui.PlatformKeyboardNavigationHost
+import com.nuvio.app.core.ui.addPlatformDecoders
 import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.desktopUiScaleForWindow
+import com.nuvio.app.core.ui.platformProvidesImageLoader
+import com.nuvio.app.features.servers.plex.PlexArtworkInterceptor
+import com.nuvio.app.features.servers.silo.SiloArtworkInterceptor
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.navigation.AppRoute
 import com.nuvio.app.navigation.TabsRoute
@@ -72,21 +79,27 @@ fun App(
 
 @Composable
 internal fun AppEnvironment(content: @Composable () -> Unit) {
-    setSingletonImageLoaderFactory { context ->
-        ImageLoader.Builder(context)
-            .crossfade(true)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .components {
-                add(SvgDecoder.Factory())
-                add(
-                    coil3.network.ktor3.KtorNetworkFetcherFactory(
-                        cacheStrategy = { coil3.network.cachecontrol.CacheControlCacheStrategy() },
-                    ),
-                )
-            }
-            .configurePlatformImageLoader()
-            .build()
+    if (!platformProvidesImageLoader) {
+        setSingletonImageLoaderFactory { context ->
+            ImageLoader.Builder(context)
+                .crossfade(true)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .components {
+                    add(CustomPosterFallbackInterceptor())
+                    add(PlexArtworkInterceptor())
+                    add(SiloArtworkInterceptor())
+                    addPlatformDecoders()
+                    add(SvgDecoder.Factory())
+                    add(
+                        coil3.network.ktor3.KtorNetworkFetcherFactory(
+                            cacheStrategy = { coil3.network.cachecontrol.CacheControlCacheStrategy() },
+                        ),
+                    )
+                }
+                .configurePlatformImageLoader()
+                .build()
+        }
     }
     val selectedTheme by remember {
         ThemeSettingsRepository.ensureLoaded()
@@ -98,13 +111,14 @@ internal fun AppEnvironment(content: @Composable () -> Unit) {
 
     val customThemeColors by ThemeSettingsRepository.customThemeColors.collectAsStateWithLifecycle()
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().nuvioTrackFocusPresence()) {
         NuvioTheme(
             appTheme = selectedTheme,
             amoled = amoledEnabled,
             customThemeColors = customThemeColors,
             desktopUiScale = desktopUiScaleForWindow(maxWidth.value, maxHeight.value),
         ) {
+            PlatformKeyboardNavigationHost()
             content()
         }
     }

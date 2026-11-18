@@ -39,12 +39,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.ui.NuvioInputField
+import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.NuvioScreen
 import com.nuvio.app.core.ui.NuvioNetworkOfflineCard
 import com.nuvio.app.core.ui.NuvioScreenHeader
@@ -74,13 +76,13 @@ import kotlinx.coroutines.flow.map
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_retry
 import nuvio.composeapp.generated.resources.compose_nav_search
+import nuvio.composeapp.generated.resources.home_empty_no_sources_title
+import nuvio.composeapp.generated.resources.search_empty_no_sources_message
 import nuvio.composeapp.generated.resources.compose_search_clear
 import nuvio.composeapp.generated.resources.compose_search_clear_all_recent_searches
 import nuvio.composeapp.generated.resources.compose_search_discover_title
 import nuvio.composeapp.generated.resources.compose_search_empty_failed_message
 import nuvio.composeapp.generated.resources.compose_search_empty_failed_title
-import nuvio.composeapp.generated.resources.compose_search_empty_no_active_addons_message
-import nuvio.composeapp.generated.resources.compose_search_empty_no_active_addons_title
 import nuvio.composeapp.generated.resources.compose_search_empty_no_results_message
 import nuvio.composeapp.generated.resources.compose_search_empty_no_results_title
 import nuvio.composeapp.generated.resources.compose_search_empty_no_search_catalogs_message
@@ -106,6 +108,7 @@ fun SearchScreen(
     ScreenActivityEffect(listState) { screenActive ->
         if (!screenActive) {
             isSearchFocused = false
+            focusRequester.freeFocus()
             listState.stopScroll()
         }
     }
@@ -304,11 +307,19 @@ fun SearchScreen(
                     androidx.compose.foundation.layout.Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         NuvioInputField(
                             value = query,
-                            onValueChange = { query = it },
+                            onValueChange = {
+                                focusRequester.captureFocus()
+                                query = it
+                            },
                             placeholder = stringResource(Res.string.compose_search_placeholder),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content),
+                            shape = RoundedCornerShape(NuvioTokens.Radius.xl),
                             modifier = Modifier
                                 .focusRequester(focusRequester)
-                                .onFocusChanged { isSearchFocused = it.isFocused },
+                                .onFocusChanged {
+                                    isSearchFocused = it.isFocused
+                                    if (query.isNotBlank()) focusRequester.captureFocus()
+                                },
                             trailingContent = if (query.isNotBlank()) {
                                 {
                                     IconButton(onClick = { query = "" }) {
@@ -331,6 +342,7 @@ fun SearchScreen(
 
         if (query.isBlank()) {
             if (recentSearches.isNotEmpty()) {
+                if (isSearchFocused) focusRequester.captureFocus()
                 item(key = "recent_searches") {
                     SearchRecentSection(
                         recentSearches = recentSearches,
@@ -492,8 +504,8 @@ private fun SearchEmptyStateCard(
 
     when (reason) {
         SearchEmptyStateReason.NoActiveAddons -> {
-            title = stringResource(Res.string.compose_search_empty_no_active_addons_title)
-            message = stringResource(Res.string.compose_search_empty_no_active_addons_message)
+            title = stringResource(Res.string.home_empty_no_sources_title)
+            message = stringResource(Res.string.search_empty_no_sources_message)
         }
 
         SearchEmptyStateReason.NoSearchCatalogs -> {
@@ -569,7 +581,7 @@ private fun SearchRecentSection(
 }
 
 @Composable
-private fun SearchRecentRow(
+internal fun SearchRecentRow(
     query: String,
     onSearchPress: () -> Unit,
     onRemovePress: () -> Unit,
@@ -591,7 +603,7 @@ private fun SearchRecentRow(
         Text(
             text = query,
             modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content),
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
