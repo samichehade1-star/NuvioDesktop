@@ -213,11 +213,11 @@ jobs:
             fi
           done
           if (( ${#missing[@]} > 0 )); then
-            printf 'Missing required desktop release values: %s\n' "${missing[*]}" >&2
-            exit 1
+            printf 'Fork build: missing optional desktop release values: %s\n' "${missing[*]}" >&2
+            : # Fork: build without NuvioMedia's private keys/Sentry (those features stay off)
           fi
 
-          printf '%s' "${LOCAL_PROPERTIES_BASE64}" | base64 --decode > local.properties
+          printf '%s' "${LOCAL_PROPERTIES_BASE64:-}" | base64 --decode > local.properties
           sed -i '' -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_(STORE_FILE|STORE_PASSWORD|KEY_ALIAS|KEY_PASSWORD)|NUVIO_MACOS_(SIGNING_IDENTITY|NOTARY_APPLE_ID|NOTARY_TEAM_ID|NOTARY_PASSWORD|NOTARY_KEYCHAIN_PROFILE|NOTARY_KEYCHAIN_PATH))[[:space:]]*=/d' local.properties
 
           required_properties=(
@@ -229,8 +229,8 @@ jobs:
           )
           for property_name in "${required_properties[@]}"; do
             if ! grep -Eq "^${property_name}=.+" local.properties; then
-              echo "Missing required desktop property: ${property_name}" >&2
-              exit 1
+              echo "Fork build: missing optional desktop property: ${property_name}" >&2
+              : # Fork: build without NuvioMedia's private keys/Sentry (those features stay off)
             fi
           done
 
@@ -297,7 +297,6 @@ jobs:
         run: |
           ./gradlew \
             :composeApp:notarizeReleaseDmgWithKeychain \
-            :desktopSentry:sentryUploadSourceBundleJava \
             "-Pnuvio.macos.arch=${MACOS_ARCH}" \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache \
@@ -313,7 +312,6 @@ jobs:
         run: |
           ./gradlew \
             :composeApp:packageReleaseDmg \
-            :desktopSentry:sentryUploadSourceBundleJava \
             "-Pnuvio.macos.arch=${MACOS_ARCH}" \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache \
@@ -423,11 +421,11 @@ jobs:
             fi
           done
           if (( ${#missing[@]} > 0 )); then
-            printf 'Missing required desktop release values: %s\n' "${missing[*]}" >&2
-            exit 1
+            printf 'Fork build: missing optional desktop release values: %s\n' "${missing[*]}" >&2
+            : # Fork: build without NuvioMedia's private keys/Sentry (those features stay off)
           fi
 
-          printf '%s' "${LOCAL_PROPERTIES_BASE64}" | base64 --decode > local.properties
+          printf '%s' "${LOCAL_PROPERTIES_BASE64:-}" | base64 --decode > local.properties
           sed -i -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_(STORE_FILE|STORE_PASSWORD|KEY_ALIAS|KEY_PASSWORD)|NUVIO_MACOS_(SIGNING_IDENTITY|NOTARY_APPLE_ID|NOTARY_TEAM_ID|NOTARY_PASSWORD|NOTARY_KEYCHAIN_PROFILE|NOTARY_KEYCHAIN_PATH))[[:space:]]*=/d' local.properties
 
           required_properties=(
@@ -439,8 +437,8 @@ jobs:
           )
           for property_name in "${required_properties[@]}"; do
             if ! grep -Eq "^${property_name}=.+" local.properties; then
-              echo "Missing required desktop property: ${property_name}" >&2
-              exit 1
+              echo "Fork build: missing optional desktop property: ${property_name}" >&2
+              : # Fork: build without NuvioMedia's private keys/Sentry (those features stay off)
             fi
           done
 
@@ -466,7 +464,6 @@ jobs:
         run: |
           & .\gradlew.bat `
             :composeApp:packageReleaseMsi `
-            :desktopSentry:sentryUploadSourceBundleJava `
             "-Pnuvio.webview2.dir=$env:WEBVIEW2_ROOT" `
             "-Pcompose.desktop.packaging.checkJdkVendor=false" `
             --no-configuration-cache `
@@ -619,7 +616,6 @@ jobs:
           set -euo pipefail
           ./gradlew \
             :composeApp:createReleaseDistributable \
-            :desktopSentry:sentryUploadSourceBundleJava \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache \
             --no-daemon \
@@ -753,7 +749,6 @@ jobs:
           set -euo pipefail
           ./gradlew \
             :composeApp:packageReleaseDeb \
-            :desktopSentry:sentryUploadSourceBundleJava \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache \
             --no-daemon \
@@ -836,7 +831,6 @@ jobs:
           set -euo pipefail
           ./gradlew \
             :composeApp:packageReleaseRpm \
-            :desktopSentry:sentryUploadSourceBundleJava \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache \
             --no-daemon \
@@ -948,7 +942,6 @@ jobs:
 
           ./gradlew \
             :composeApp:packageReleaseAppImage \
-            :desktopSentry:sentryUploadSourceBundleJava \
             -Pcompose.desktop.packaging.checkJdkVendor=false \
             --no-configuration-cache \
             --no-daemon \
