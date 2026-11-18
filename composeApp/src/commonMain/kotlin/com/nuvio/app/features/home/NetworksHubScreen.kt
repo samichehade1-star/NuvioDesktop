@@ -1,5 +1,11 @@
 package com.nuvio.app.features.home
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import nuvio.composeapp.generated.resources.library_title
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -47,6 +53,7 @@ fun NetworksHubScreen(
     onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    onLibraryClick: (() -> Unit)? = null,
 ) {
     var sections by remember { mutableStateOf<List<HomeCatalogSection>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -83,6 +90,17 @@ fun NetworksHubScreen(
                     title = stringResource(Res.string.networks_hub_title),
                     modifier = Modifier.padding(horizontal = 16.dp),
                     topPadding = topChromePadding,
+                    actions = {
+                        if (onLibraryClick != null) {
+                            IconButton(onClick = onLibraryClick) {
+                                Icon(
+                                    imageVector = Icons.Rounded.VideoLibrary,
+                                    contentDescription = stringResource(Res.string.library_title),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
                 )
             }
             when {
