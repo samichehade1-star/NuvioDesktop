@@ -543,6 +543,12 @@ private fun MobileStreamsLayout(
                         onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
                         onRefresh = onRefresh,
                     )
+                    QualityFilterRow(
+                        availableQualities = uiState.availableQualityFilters,
+                        selectedQuality = uiState.selectedQualityFilter,
+                        onQualitySelected = { quality -> StreamsRepository.selectQualityFilter(quality) },
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
 
                     StreamList(
                         uiState = uiState,
@@ -811,6 +817,39 @@ internal fun ProviderFilterRow(
 }
 
 @Composable
+internal fun QualityFilterRow(
+    availableQualities: List<String>,
+    selectedQuality: String?,
+    onQualitySelected: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (availableQualities.isEmpty()) return
+    val scrollState = rememberScrollState()
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .nuvioDesktopDragScroll(scrollState).nuvioDesktopWheelScroll(scrollState)
+            .horizontalScroll(scrollState)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            label = stringResource(Res.string.collections_tab_all),
+            isSelected = selectedQuality == null,
+            onClick = { onQualitySelected(null) },
+        )
+        availableQualities.forEach { quality ->
+            FilterChip(
+                label = quality,
+                isSelected = selectedQuality == quality,
+                onClick = { onQualitySelected(quality) },
+            )
+        }
+    }
+}
+
+@Composable
 private fun FilterChip(
     label: String? = null,
     icon: ImageVector? = null,
@@ -938,6 +977,7 @@ internal fun StreamList(
         buildStreamSectionRenderModels(filteredGroups)
     }
     val torrentNotSupportedText = stringResource(Res.string.streams_torrent_not_supported)
+    val recommendedLabel = stringResource(Res.string.streams_recommended)
     val listState = rememberLazyListState()
     val fetchingText = stringResource(Res.string.streams_fetching)
     val findingStreamsText = stringResource(Res.string.streams_finding_streams)
@@ -995,6 +1035,8 @@ internal fun StreamList(
                             onStreamSecondaryClick = onStreamSecondaryClick,
                             resumePositionMs = resumePositionMs,
                             resumeProgressFraction = resumeProgressFraction,
+                            recommendedStream = uiState.recommendedStream,
+                            recommendedLabel = recommendedLabel,
                         )
                     }
                     if (anyLoading) {
@@ -1077,6 +1119,8 @@ private fun LazyListScope.streamSection(
     onStreamSecondaryClick: (StreamItem, Offset) -> Unit,
     resumePositionMs: Long?,
     resumeProgressFraction: Float?,
+    recommendedStream: StreamItem?,
+    recommendedLabel: String,
 ) {
     val group = section.group
     if (group.streams.isEmpty() && !group.isLoading) return
@@ -1122,6 +1166,8 @@ private fun LazyListScope.streamSection(
                 showFileSizeBadges = showFileSizeBadges,
                 showAddonLogo = showAddonLogo,
                 badgePlacement = badgePlacement,
+                isRecommended = recommendedStream != null && stream == recommendedStream,
+                recommendedLabel = recommendedLabel,
                 onClick = {
                     if (isSelectable) {
                         onStreamSelected(stream, resumePositionMs, resumeProgressFraction)

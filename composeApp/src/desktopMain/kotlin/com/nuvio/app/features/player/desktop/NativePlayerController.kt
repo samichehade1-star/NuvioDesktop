@@ -24,6 +24,7 @@ import com.nuvio.app.features.player.SubtitleOutlineColorSwatches
 import com.nuvio.app.features.player.SubtitleStyleState
 import com.nuvio.app.features.player.SubtitleTrack
 import com.nuvio.app.features.player.inferForcedSubtitleTrack
+import com.nuvio.app.features.player.skip.SkipInterval
 import com.nuvio.app.features.player.toStorageHexString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -1083,6 +1084,32 @@ internal class NativePlayerController(
             json.decodeFromString<List<NativeMpvTrack>>(readJson(current))
         }.getOrDefault(emptyList())
     }
+
+    override fun getChapterSkipIntervals(): List<SkipInterval> {
+        val current = handle.takeIf { it != 0L } ?: return emptyList()
+        val chapters = runCatching {
+            json.decodeFromString<List<NativeMpvChapter>>(NativePlayerBridge.chaptersJson(current))
+        }.getOrDefault(emptyList()).sortedBy { it.time }
+        if (chapters.isEmpty()) return emptyList()
+        val durationSec = NativePlayerBridge.durationMs(current) / 1000.0
+        return chapters.mapIndexedNotNull { index, chapter ->
+            val type = chapterSkipType(chapter.title) ?: return@mapIndexedNotNull null
+            val end = chapters.getOrNull(index + 1)?.time?.takeIf { it > chapter.time } ?: durationSec
+            if (end <= chapter.time) return@mapIndexedNotNull null
+            SkipInterval(startTime = chapter.time, endTime = end, type = type, provider = "chapters")
+        }
+    }
+
+    private fun chapterSkipType(rawTitle: String): String? {
+        val title = rawTitle.trim().lowercase()
+        if (title.isBlank()) return null
+        return when {
+            title.contains("recap") || title.contains("previously") -> "recap"
+            title.contains("opening") || title.contains("intro") || title == "op" || title.startsWith("op ") -> "intro"
+            title.contains("credits") || title.contains("outro") || title.contains("ending") || title == "ed" -> "outro"
+            else -> null
+        }
+    }
 }
 
 private fun String.toPlaybackLogKey(): String {
@@ -1112,6 +1139,12 @@ private data class NativeMpvTrack(
     val language: String = "",
     val selected: Boolean = false,
     val forced: Boolean = false,
+)
+
+@Serializable
+private data class NativeMpvChapter(
+    val title: String = "",
+    val time: Double = 0.0,
 )
 
 private fun resolveTrackId(index: Int, tracks: List<NativeMpvTrack>): Int? =

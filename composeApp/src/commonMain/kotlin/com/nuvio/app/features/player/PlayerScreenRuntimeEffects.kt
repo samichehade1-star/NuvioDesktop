@@ -19,6 +19,7 @@ import com.nuvio.app.features.player.skip.SkipIntroRepository
 import com.nuvio.app.features.player.skip.SkipIntervalLookup
 import com.nuvio.app.features.player.skip.autoSkipKey
 import com.nuvio.app.features.player.skip.autoSkipKeysCompletedBy
+import com.nuvio.app.features.player.skip.mergeSkipIntervalsByPriority
 import com.nuvio.app.features.player.skip.resolveSkipIntervalLookup
 import com.nuvio.app.features.streams.BingeGroupCacheRepository
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
@@ -477,6 +478,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         playerSettingsUiState.skipIntroEnabled,
     ) {
         skipIntervals = emptyList()
+        chapterSkipIntervals = emptyList()
         activeSkipInterval = null
         skipIntervalDismissed = false
         autoSkippedIntervalKeys.clear()
@@ -525,10 +527,21 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         }
     }
 
+    // Chapters are only readable once the native player has actually loaded the file, which
+    // happens on its own schedule independent of the network lookup above, so it gets its own
+    // effect keyed on duration becoming known rather than the video id changing.
+    LaunchedEffect(activeVideoId, playerController, playbackSnapshot.durationMs > 0L) {
+        if (!playerSettingsUiState.skipIntroEnabled) return@LaunchedEffect
+        val controller = playerController ?: return@LaunchedEffect
+        if (playbackSnapshot.durationMs <= 0L) return@LaunchedEffect
+        chapterSkipIntervals = controller.getChapterSkipIntervals()
+    }
+
     LaunchedEffect(
         playbackSnapshot.positionMs,
         playbackSnapshot.isLoading,
         skipIntervals,
+        chapterSkipIntervals,
         playerSettingsUiState.autoSkipSegmentTypes,
         playerController,
         initialLoadCompleted,
@@ -536,7 +549,8 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         activeInitialProgressFraction,
         playbackSnapshot.durationMs,
     ) {
-        if (skipIntervals.isEmpty()) {
+        val effectiveIntervals = mergeSkipIntervalsByPriority(skipIntervals, chapterSkipIntervals)
+        if (effectiveIntervals.isEmpty()) {
             activeSkipInterval = null
             return@LaunchedEffect
         }
@@ -549,9 +563,9 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             }
             else -> 0L
         }
-        autoSkippedIntervalKeys += skipIntervals.autoSkipKeysCompletedBy(initialPlaybackPositionMs)
+        autoSkippedIntervalKeys += effectiveIntervals.autoSkipKeysCompletedBy(initialPlaybackPositionMs)
         val positionSec = playbackSnapshot.positionMs / 1000.0
-        val current = skipIntervals.firstOrNull { interval ->
+        val current = effectiveIntervals.firstOrNull { interval ->
             positionSec >= interval.startTime && positionSec < interval.endTime
         }
         if (current != activeSkipInterval) {
@@ -596,6 +610,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         watchedUiState.watchedKeys,
     ) {
         if (!isSeries || playerMetaVideos.isEmpty()) {
+            playerControlsLog.d { "nextEpisodeInfo resolve skipped isSeries=$isSeries videoCount=${playerMetaVideos.size}" }
             nextEpisodeInfo = null
             return@LaunchedEffect
         }
@@ -606,6 +621,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             currentSeason = curSeason,
             currentEpisode = curEpisode,
         )
+        playerControlsLog.d {
+            "nextEpisodeInfo resolve videoCount=${playerMetaVideos.size} curSeason=$curSeason curEpisode=$curEpisode " +
+                "nextVideo=${nextVideo?.let { "s=${it.season}e=${it.episode}" } ?: "null"}"
+        }
         val nextSeason = nextVideo?.season
         val nextEpisode = nextVideo?.episode
         nextEpisodeInfo = if (nextVideo != null && nextSeason != null && nextEpisode != null) {
@@ -648,23 +667,34 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         playbackSnapshot.durationMs,
         nextEpisodeInfo,
         skipIntervals,
+        chapterSkipIntervals,
         playerSettingsUiState.nextEpisodeThresholdMode,
         playerSettingsUiState.nextEpisodeThresholdPercent,
         playerSettingsUiState.nextEpisodeThresholdMinutesBeforeEnd,
         nextEpisodeCardDismissed,
     ) {
         if (nextEpisodeInfo == null || playbackSnapshot.durationMs <= 0L) {
+            playerControlsLog.d {
+                "nextEpisodeCard early-out nextEpisodeInfo=${nextEpisodeInfo != null} durationMs=${playbackSnapshot.durationMs} positionMs=${playbackSnapshot.positionMs}"
+            }
             showNextEpisodeCard = false
             return@LaunchedEffect
         }
         val shouldShow = PlayerNextEpisodeRules.shouldShowNextEpisodeCard(
             positionMs = playbackSnapshot.positionMs,
             durationMs = playbackSnapshot.durationMs,
-            skipIntervals = skipIntervals,
+            skipIntervals = mergeSkipIntervalsByPriority(skipIntervals, chapterSkipIntervals),
             thresholdMode = playerSettingsUiState.nextEpisodeThresholdMode,
             thresholdPercent = playerSettingsUiState.nextEpisodeThresholdPercent,
             thresholdMinutesBeforeEnd = playerSettingsUiState.nextEpisodeThresholdMinutesBeforeEnd,
         )
+        playerControlsLog.d {
+            "nextEpisodeCard check positionMs=${playbackSnapshot.positionMs} durationMs=${playbackSnapshot.durationMs} " +
+                "pct=${playbackSnapshot.positionMs.toDouble() / playbackSnapshot.durationMs.toDouble()} " +
+                "thresholdMode=${playerSettingsUiState.nextEpisodeThresholdMode} thresholdPercent=${playerSettingsUiState.nextEpisodeThresholdPercent} " +
+                "thresholdMinutes=${playerSettingsUiState.nextEpisodeThresholdMinutesBeforeEnd} shouldShow=$shouldShow " +
+                "showNextEpisodeCard=$showNextEpisodeCard dismissed=$nextEpisodeCardDismissed"
+        }
         if (shouldShow && !showNextEpisodeCard && !nextEpisodeCardDismissed) {
             showNextEpisodeCard = true
             if (playerSettingsUiState.streamAutoPlayNextEpisodeEnabled && nextEpisodeInfo?.hasAired == true) {

@@ -2,6 +2,7 @@ package com.nuvio.app.features.player
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.nuvio.app.features.player.skip.SkipInterval
 
 interface PlayerEngineController {
     fun play()
@@ -36,6 +37,9 @@ interface PlayerEngineController {
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
     fun updateNowPlayingMetadata(info: PlayerNowPlayingInfo) {}
     fun clearNowPlayingInfo() {}
+
+    /** Intro/recap/credits segments derived from the currently loaded file's own chapter markers, if any. */
+    fun getChapterSkipIntervals(): List<SkipInterval> = emptyList()
 
     /** Optional barrier for platforms that must release native resources before their route is removed. */
     fun releaseBeforeNavigation(

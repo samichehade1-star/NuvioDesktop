@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -245,8 +246,11 @@ internal fun Modifier.nuvioDesktopWheelScroll(
                 val event = awaitPointerEvent(pass = PointerEventPass.Main)
                 if (event.type != PointerEventType.Scroll) continue
                 val change = event.changes.firstOrNull() ?: continue
-                val scrollDelta = change.scrollDelta
-                val amount = if (scrollDelta.x != 0f) scrollDelta.x else scrollDelta.y
+                // Only hijack genuine horizontal input (shift+wheel or a trackpad's horizontal
+                // axis) into shelf scrolling. Plain vertical wheel scroll must fall through
+                // untouched so the page underneath keeps scrolling while the cursor happens to
+                // be over a shelf - that's what row arrows and click-drag are for.
+                val amount = change.scrollDelta.x
                 if (amount != 0f) {
                     state.dispatchRawDelta(amount * NuvioWheelScrollPixelsPerNotch)
                     change.consume()
@@ -267,8 +271,7 @@ internal fun Modifier.nuvioDesktopWheelScroll(
                 val event = awaitPointerEvent(pass = PointerEventPass.Main)
                 if (event.type != PointerEventType.Scroll) continue
                 val change = event.changes.firstOrNull() ?: continue
-                val scrollDelta = change.scrollDelta
-                val amount = if (scrollDelta.x != 0f) scrollDelta.x else scrollDelta.y
+                val amount = change.scrollDelta.x
                 if (amount != 0f) {
                     state.dispatchRawDelta(amount * NuvioWheelScrollPixelsPerNotch)
                     change.consume()
@@ -303,6 +306,7 @@ fun NuvioPosterCard(
         shape = shape,
     )
     val shouldShowTitleBelow = showTitleBelow && !posterCardStyle.hideLabelsEnabled
+    var imageLoadFailed by remember(imageUrl) { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -330,12 +334,13 @@ fun NuvioPosterCard(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (imageUrl != null) {
+            if (imageUrl != null && !imageLoadFailed) {
                 NuvioAsyncImage(
                     model = imageUrl,
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
+                    onError = { imageLoadFailed = true },
                 )
             } else {
                 Text(

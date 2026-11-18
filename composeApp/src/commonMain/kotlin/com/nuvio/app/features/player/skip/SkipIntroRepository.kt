@@ -162,23 +162,8 @@ object SkipIntroRepository {
         return@coroutineScope mergeByPriority(introDb, animeSkip, aniSkipDeferred.await()).also { cache[cacheKey] = it }
     }
 
-    private fun mergeByPriority(vararg providerResults: List<SkipInterval>): List<SkipInterval> {
-        val chosen = LinkedHashMap<String, SkipInterval>()
-        for (result in providerResults) {
-            for (interval in result) {
-                val category = segmentCategory(interval.type) ?: continue
-                if (category !in chosen) chosen[category] = interval
-            }
-        }
-        return chosen.values.toList()
-    }
-
-    private fun segmentCategory(type: String): String? = when (type.lowercase()) {
-        "intro", "op", "mixed-op" -> "opening"
-        "outro", "ed", "mixed-ed", "credits", "ending" -> "ending"
-        "recap" -> "recap"
-        else -> null
-    }
+    private fun mergeByPriority(vararg providerResults: List<SkipInterval>): List<SkipInterval> =
+        mergeSkipIntervalsByPriority(*providerResults)
 
     private suspend fun fetchFromIntroDb(imdbId: String, season: Int, episode: Int): List<SkipInterval> {
         return try {
@@ -309,4 +294,26 @@ object SkipIntroRepository {
         animeSkipShowIdCache.clear()
         SimklIdResolver.clearCache()
     }
+}
+
+/**
+ * Merges skip intervals from multiple providers, one winner per segment category
+ * (opening/ending/recap), preferring whichever provider is listed first.
+ */
+internal fun mergeSkipIntervalsByPriority(vararg providerResults: List<SkipInterval>): List<SkipInterval> {
+    val chosen = LinkedHashMap<String, SkipInterval>()
+    for (result in providerResults) {
+        for (interval in result) {
+            val category = skipSegmentCategory(interval.type) ?: continue
+            if (category !in chosen) chosen[category] = interval
+        }
+    }
+    return chosen.values.toList()
+}
+
+internal fun skipSegmentCategory(type: String): String? = when (type.lowercase()) {
+    "intro", "op", "mixed-op" -> "opening"
+    "outro", "ed", "mixed-ed", "credits", "ending" -> "ending"
+    "recap" -> "recap"
+    else -> null
 }

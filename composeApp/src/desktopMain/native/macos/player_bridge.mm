@@ -114,6 +114,7 @@ static constexpr double kMaxVolumePercent = 200.0;
 - (BOOL)isEnded;
 - (NSString *)audioTracksJson;
 - (NSString *)subtitleTracksJson;
+- (NSString *)chaptersJson;
 - (void)selectAudioTrackId:(int)trackId;
 - (void)selectSubtitleTrackId:(int)trackId;
 - (void)addSubtitleUrl:(NSString *)url;
@@ -2033,6 +2034,26 @@ static void setMpvOptionString(mpv_handle *mpv, const char *name, const char *va
     return [self tracksJsonForType:@"sub"];
 }
 
+- (NSString *)chaptersJson {
+    if (!_mpv) return @"[]";
+    NSMutableArray<NSDictionary *> *chapters = [NSMutableArray array];
+    long long count = [self int64Property:"chapter-list/count" fallback:0];
+    for (long long index = 0; index < count; index++) {
+        NSString *prefix = [NSString stringWithFormat:@"chapter-list/%lld", index];
+        NSString *title = [[self stringProperty:[[prefix stringByAppendingString:@"/title"] UTF8String] fallback:@""]
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        double time = [self doubleProperty:[[prefix stringByAppendingString:@"/time"] UTF8String] fallback:-1.0];
+        if (time < 0.0) continue;
+        [chapters addObject:@{
+            @"title": title ?: @"",
+            @"time": @(time),
+        }];
+    }
+    NSData *data = [NSJSONSerialization dataWithJSONObject:chapters options:0 error:nil];
+    if (!data) return @"[]";
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"[]";
+}
+
 - (void)selectAudioTrackId:(int)trackId {
     if (!_mpv) return;
     int64_t id = trackId;
@@ -2921,6 +2942,18 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson
     if (handle == 0) return env->NewStringUTF("[]");
     MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
     NSString *json = [player subtitleTracksJson] ?: @"[]";
+    return env->NewStringUTF(json.UTF8String);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_chaptersJson(
+    JNIEnv *env,
+    jobject /* bridge */,
+    jlong handle
+) {
+    if (handle == 0) return env->NewStringUTF("[]");
+    MpvWebPlayer *player = (__bridge MpvWebPlayer *)(void *)(intptr_t)handle;
+    NSString *json = [player chaptersJson] ?: @"[]";
     return env->NewStringUTF(json.UTF8String);
 }
 

@@ -43,7 +43,7 @@ import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
-private val playerControlsLog = Logger.withTag("PlayerControls")
+internal val playerControlsLog = Logger.withTag("PlayerControls")
 
 @Composable
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {

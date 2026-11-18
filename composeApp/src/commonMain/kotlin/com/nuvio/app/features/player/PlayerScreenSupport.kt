@@ -4,7 +4,7 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.streams.StreamItem
 
-internal const val PlaybackProgressPersistIntervalMs = 60_000L
+internal const val PlaybackProgressPersistIntervalMs = 15_000L
 internal const val PlayerDoubleTapSeekStepMs = 10_000L
 internal const val PlayerDoubleTapSeekResetDelayMs = 800L
 internal const val PlayerLockedOverlayDurationMs = 2_000L
@@ -87,3 +87,25 @@ internal data class PendingPlayerP2pSwitch(
     val episode: MetaVideo?,
     val isAutoPlay: Boolean,
 )
+
+/**
+ * Lets the desktop window's onCloseRequest flush the active player's watch progress before the
+ * whole app exits. Without this, quitting via the window's close button (rather than pressing
+ * Back inside the app first) skipped straight to exitApplication() and relied entirely on the
+ * periodic progress tick, so resume position could lag behind by up to that tick's interval.
+ */
+internal object PlayerAppExitFlush {
+    private var flush: (() -> Unit)? = null
+
+    fun register(flush: () -> Unit) {
+        this.flush = flush
+    }
+
+    fun unregister(flush: () -> Unit) {
+        if (this.flush === flush) this.flush = null
+    }
+
+    fun flushActive() {
+        flush?.invoke()
+    }
+}
